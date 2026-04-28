@@ -1,108 +1,110 @@
 # specflow
 
-A lightweight spec-driven development workflow for [Claude Code](https://docs.claude.com/en/docs/claude-code).
+專為 [Claude Code](https://docs.claude.com/en/docs/claude-code) 設計的**輕量規格驅動開發工作流**。
 
-Inspired by OpenSpec, but stripped down for solo developers and small teams.
-Specflow forces you to align on intent **before** writing code, while keeping the ceremony minimal enough that you'll actually use it.
+設計靈感來自 OpenSpec,但去掉了大型團隊協作所需的儀式感,聚焦在「先對齊意圖、再動手寫程式碼」這件事。
+個人開發者跟小團隊用得最舒服。
 
-## Why specflow?
+## 為什麼需要 specflow?
 
-If you've used Claude Code on serious work, you've probably hit two failure modes:
+如果你認真用 Claude Code 寫過正式專案,大概有踩過兩個坑:
 
-1. **Claude over-designs simple changes** — a 30-line edit turns into a 300-line refactor
-2. **Claude misunderstands your project conventions** — wrong layer, wrong naming, wrong everything
+1. **Claude 對小改動過度設計** —— 你只想改 30 行,它給你重構 300 行
+2. **Claude 不熟你的專案慣例** —— 用錯架構層、命名亂套、目錄放錯
 
-Specflow solves both by forcing a 3-stage workflow:
+specflow 用一個強制的三階段流程解決這兩個問題:
 
 ```
-issue.md  →  /spec:design  →  design.md  →  /spec:task  →  task.md  →  /spec:run  →  code
+issue.md  →  /spec:design  →  design.md  →  /spec:task  →  task.md  →  /spec:run  →  程式碼
    ↑                            ↑                          ↑                          ↑
- you write                  Claude proposes              Claude proposes        Claude executes
-                            decisions                    fine-grained steps     step by step
+ 你寫                       Claude 提出設計決策       Claude 提出細顆粒度的任務     Claude 逐項執行
 ```
 
-Each stage has a checkpoint where **you review before Claude proceeds**.
+每個階段中間都有 checkpoint,**Claude 必須等你審查確認後才會繼續**。
 
-## Quick Start
+## 快速開始
 
-### Install in your project
+### 在你的專案安裝
 
 ```bash
 cd /path/to/your/project
 npx @virtualorz/specflow init
 ```
 
-This creates `.claude/` (skill + slash commands) and `specflow/` (project rules + your specs) in the current directory.
+這會在當前目錄建立 `.claude/`(skill + slash commands)跟 `specflow/`(專案規範 + 你的 spec 任務)。
 
-### Define your project rules
+### 定義你的專案規範
 
-Edit `specflow/project.md` with your technical stack, architecture constraints, naming conventions, etc.
-This file is **the constitution** — Claude reads it before generating any design or task.
+編輯 `specflow/project.md`,寫入你的技術棧、架構約束、命名慣例等。
+這份檔案是**整個專案的憲法** —— Claude 在產生任何 design 或 task 前都會讀它。
 
-### Start your first spec
+### 開始第一個 spec
 
-In Claude Code, run:
+在 Claude Code 中執行:
 
 ```
 /spec:new my-first-task
 ```
 
-This creates `specflow/changes/my-first-task/issue.md`. Edit it with:
+這會建立 `specflow/changes/my-first-task/issue.md`。編輯它,寫入:
 
-- **The problem** you're solving
-- **The expected outcome**
-- **The scope boundary** (what to touch, what NOT to touch)
+- **想解決的問題**
+- **期望的結果**
+- **範圍限制**(只動什麼、絕對不動什麼)
 
-Then run:
+然後執行:
 
 ```
 /spec:design my-first-task
 ```
 
-Claude reads `project.md` + `issue.md` and produces a `design.md` with a checkbox list of design decisions. Review them, check the boxes, then:
+Claude 會讀 `project.md` + `issue.md`,產出 `design.md`,裡面是一個 checkbox 形式的設計決策清單。
+逐項審查、勾選後執行:
 
 ```
 /spec:task my-first-task
 ```
 
-Claude produces a `task.md` with concrete checkboxes. Review, then:
+Claude 會產出 `task.md`,裡面是具體的執行步驟 checkbox。審查後執行:
 
 ```
 /spec:run my-first-task
 ```
 
-Claude executes each task one by one, ticking checkboxes as it goes, and writes a post-execution summary at the end.
+Claude 會逐項執行 task,每完成一項勾一個 checkbox,結尾會寫一份「執行後備註」總結整次改動。
 
-## Slash Commands
+## Slash Commands 一覽
 
-| Command | Purpose |
-|---------|---------|
-| `/spec:new <task-name>` | Create a new spec folder + issue.md template |
-| `/spec:design <task-name>` | Read issue.md, generate design.md (with decision checklist) |
-| `/spec:task <task-name>` | Read design.md, generate task.md (executable checklist). If `design.md` has discussion questions, enters "discussion mode" first |
-| `/spec:run <task-name>` | Execute task.md step by step, fill in post-execution notes |
+| 指令 | 用途 |
+|------|------|
+| `/spec:new <task-name>` | 建立新的 spec 任務資料夾與 issue.md template |
+| `/spec:design <task-name>` | 讀取 issue.md,產生 design.md(含設計決策清單) |
+| `/spec:task <task-name>` | 讀取 design.md,產生 task.md(可執行的 checkbox 清單)。若 design.md 有「待討論問題」會先進入討論模式 |
+| `/spec:run <task-name>` | 逐項執行 task.md,完成後填寫執行後備註 |
 
-## Discussion Mode
+## 討論模式
 
-When reviewing `design.md`, you can write questions in the **"待討論問題" (Pending Questions)** section. Re-running `/spec:task` will:
+審查 `design.md` 時,你可以在 **「待討論問題」** 區塊寫下對某條決策的疑問。
+重新執行 `/spec:task` 時,Claude 會:
 
-1. Detect the pending questions
-2. Answer them based on `project.md` + context
-3. Update affected decisions and reset their checkboxes
-4. Move the discussion summary to **"已討論問題" (Discussed Questions)** for future reference
-5. Stop and ask you to re-review
+1. 偵測到「待討論問題」有內容
+2. 基於 `project.md` 跟現有脈絡逐題回答
+3. 修改受影響的決策、把它們的 checkbox 重置為 `[ ]`(需重新審查)
+4. 把問題摘要搬到 **「已討論問題」** 區塊(保留決策演進的脈絡)
+5. 停下來,等你重新審查
 
-This gives you a back-and-forth loop without leaving the file.
+這讓你在不離開檔案的前提下,跟 Claude 來回討論直到對齊意圖。
 
-## File Structure
+## 檔案結構
 
-After `init`, your project has:
+執行 `init` 後,你的專案會多出:
 
 ```
 your-project/
 ├── .claude/
 │   ├── skills/specflow/
 │   │   ├── SKILL.md
+│   │   ├── .specflow-version       (記錄安裝版本,給 update 用)
 │   │   └── templates/
 │   │       ├── issue.md
 │   │       ├── design.md
@@ -113,7 +115,7 @@ your-project/
 │       ├── task.md
 │       └── run.md
 └── specflow/
-    ├── project.md              ← edit this
+    ├── project.md                  ← 編輯這份
     └── changes/
         └── <task-name>/
             ├── issue.md
@@ -121,31 +123,49 @@ your-project/
             └── task.md
 ```
 
-## Naming Convention
+建議將 `.claude/` 跟 `specflow/` 都 commit 進 git,這樣團隊成員 clone 下來就能直接用。
 
-`<task-name>` must match: `^[a-z]+(-[a-z]+)*$`
+## 任務命名規則
+
+`<task-name>` 必須符合:`^[a-z]+(-[a-z]+)*$`
 
 - ✅ `refactor-controller-and-readme`
-- ❌ `Refactor_Controller` (uppercase + underscore)
-- ❌ `重構-proxy` (non-ASCII)
+- ❌ `Refactor_Controller`(含大寫與底線)
+- ❌ `重構-proxy`(含中文)
 
-## Design Philosophy
+## 升級
 
-- **Use structure to force quality of thought, but keep minimal forms for small changes** — `design.md` for a 30-line patch can be 3 decisions, not 30
-- **Every stage stops for human review** — specflow's value is the checkpoints, not automation
-- **Don't trust Claude's memory** — slash commands use `cat` instead of the Read tool to bypass file caching
-- **State machine over flow control** — gate conditions (decisions checked + questions cleared) decide what `/spec:task` does, not Claude's memory
+當 specflow 推出新版時,在已安裝的專案執行:
 
-## Compatibility
+```bash
+npx @virtualorz/specflow update
+```
 
-- Requires [Claude Code](https://docs.claude.com/en/docs/claude-code)
-- Works with any project type (Laravel, React, Node.js, Python, ...) — specflow itself is pure markdown
-- Node.js 18+ required for the `init` command (only)
+`update` 會:
+
+- ✅ 覆蓋 `.claude/skills/specflow/` 跟 `.claude/commands/spec/`(specflow 工具本體)
+- 🛡️ **不動** `specflow/project.md`(你的專案規範)
+- 🛡️ **不動** `specflow/changes/`(你的工作軌跡)
+
+執行前會列出將被覆蓋的範圍並詢問確認。完成後建議用 `git diff .claude/` 審查變更,確認沒問題再 commit。
+
+## 設計哲學
+
+- **用結構強迫思考品質,但保留最小化形式給小改動** —— 30 行的小改動,design.md 可以只有 3 條決策
+- **每個階段都有 checkpoint** —— specflow 的價值在於每階段的人工審查,不是自動化
+- **不要相信 Claude 的記憶** —— slash command 用 `cat` 而非 Read 工具讀檔,避開 Claude Code 的檔案快取
+- **狀態機優於流程控制** —— `/spec:task` 由「閘門條件」(決策全勾 + 待討論清空)決定要做什麼,而非由 Claude「記得該做什麼」
+
+## 相容性
+
+- 需要 [Claude Code](https://docs.claude.com/en/docs/claude-code)
+- 跟任何專案類型都相容(Laravel、React、Node.js、Python 等) —— specflow 本身只是一堆 Markdown
+- 執行 `init` / `update` 需要 Node.js 18+(只有安裝步驟需要,specflow 跑流程時不需要 Node)
 
 ## License
 
 MIT © virtualorz
 
-## Contributing
+## 回報問題與貢獻
 
-Issues and PRs welcome at [github.com/virtualorz/specflow](https://github.com/virtualorz/specflow).
+歡迎在 [github.com/virtualorz/specflow](https://github.com/virtualorz/specflow) 提 issue 或 PR。

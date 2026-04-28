@@ -6,11 +6,13 @@
  *    - 任一存在 → 提示已安裝,中止
  * 2. 複製 templates/.claude/ → 當前目錄/.claude/
  * 3. 複製 templates/specflow/ → 當前目錄/specflow/
- * 4. 顯示後續步驟
+ * 4. 寫入 .claude/skills/specflow/.specflow-version (記錄安裝版本)
+ * 5. 顯示後續步驟
  */
 
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { writeFile, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { copyDirRecursive } from '../utils/copy.js';
 
 export async function runInit({ packageRoot }) {
@@ -23,12 +25,12 @@ export async function runInit({ packageRoot }) {
   const specflowExists = existsSync(targetSpecflow);
 
   if (claudeExists || specflowExists) {
-    console.error('\n⚠️  specflow appears to be already installed in this directory:\n');
-    if (claudeExists) console.error(`   - ${join('.claude', 'skills', 'specflow')}/ exists`);
-    if (specflowExists) console.error(`   - specflow/ exists`);
-    console.error('\nTo update an existing installation, please use:');
-    console.error('   npx @virtualorz/specflow update    (coming soon)\n');
-    console.error('Or manually remove the above directories and re-run init.\n');
+    console.error('\n⚠️  specflow 似乎已經安裝在當前目錄:\n');
+    if (claudeExists) console.error(`   - ${join('.claude', 'skills', 'specflow')}/ 已存在`);
+    if (specflowExists) console.error(`   - specflow/ 已存在`);
+    console.error('\n若要升級已安裝的版本,請使用:');
+    console.error('   npx @virtualorz/specflow update\n');
+    console.error('或手動移除以上目錄後重新執行 init。\n');
     throw new Error('Already installed');
   }
 
@@ -36,42 +38,49 @@ export async function runInit({ packageRoot }) {
   const sourceClaude = join(packageRoot, 'templates', '.claude');
   const sourceSpecflow = join(packageRoot, 'templates', 'specflow');
 
-  console.log('\n📦 Installing specflow...\n');
+  console.log('\n📦 安裝 specflow 中...\n');
 
-  console.log('  Copying .claude/ ...');
+  console.log('  複製 .claude/ ...');
   await copyDirRecursive(sourceClaude, targetClaude);
 
-  console.log('  Copying specflow/ ...');
+  console.log('  複製 specflow/ ...');
   await copyDirRecursive(sourceSpecflow, targetSpecflow);
 
-  // ── Step 4: 顯示後續步驟 ──────────────────
-  console.log(`
-✅ specflow has been installed.
+  // ── Step 4: 寫入版本標記 ──────────────────
+  const pkgJson = JSON.parse(
+    await readFile(join(packageRoot, 'package.json'), 'utf-8')
+  );
+  const versionFile = join(targetClaude, 'skills', 'specflow', '.specflow-version');
+  await writeFile(versionFile, pkgJson.version + '\n', 'utf-8');
 
-📁 Created:
+  // ── Step 5: 顯示後續步驟 ──────────────────
+  console.log(`
+✅ specflow 已安裝完成 (v${pkgJson.version})
+
+📁 已建立:
    .claude/
-   ├── skills/specflow/         (skill definition + templates)
+   ├── skills/specflow/         (skill 定義 + templates)
    └── commands/spec/           (slash commands: new, design, task, run)
 
    specflow/
-   ├── project.md               (⚠️  REQUIRED: edit this with your project rules)
-   └── changes/                 (your specs will live here)
+   ├── project.md               (⚠️  必填: 編輯這份檔案,寫入你的專案規範)
+   └── changes/                 (你的 spec 任務會放在這裡)
 
-📝 Next steps:
+📝 接下來:
 
-   1. Edit specflow/project.md to define YOUR project rules
-      (technical stack, architecture constraints, naming conventions, etc.)
+   1. 編輯 specflow/project.md,定義你專案的規範
+      (技術棧、架構約束、命名慣例等)
 
-   2. Restart Claude Code or open a new session so it picks up
-      the new slash commands (/spec:new, /spec:design, /spec:task, /spec:run)
+   2. 重啟 Claude Code 或開新 session,讓它載入新的 slash commands
+      (/spec:new, /spec:design, /spec:task, /spec:run)
 
-   3. Start your first spec:
+   3. 開始你的第一個 spec:
       /spec:new my-first-task
 
-   4. Commit the installation:
+   4. 把 specflow 的安裝 commit 進 git:
       git add .claude/ specflow/
       git commit -m "chore: install specflow"
 
-📚 Documentation: https://github.com/virtualorz/specflow
+📚 文件: https://github.com/virtualorz/specflow
 `);
 }
