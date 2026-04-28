@@ -1,0 +1,34 @@
+{
+  "name": "@virtualorz/specflow",
+  "version": "0.1.0",
+  "description": "A lightweight spec-driven development workflow for Claude Code",
+  "type": "module",
+  "bin": {
+    "specflow": "./bin/specflow.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "templates/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "specflow",
+    "spec-driven",
+    "development-workflow",
+    "ai-assisted-development"
+  ],
+  "author": "virtualorz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/virtualorz/specflow.git"
+  },
+  "homepage": "https://github.com/virtualorz/specflow#readme",
+  "bugs": {
+    "url": "https://github.com/virtualorz/specflow/issues"
+  }
+}

@@ -1,0 +1,19 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# 安全 - 絕對不要 commit npm token
+.npmrc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Test outputs(本地實驗用)
+test-output/
