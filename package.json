@@ -4,7 +4,7 @@
   "description": "A lightweight spec-driven development workflow for Claude Code",
   "type": "module",
   "bin": {
-    "specflow": "./bin/specflow.js"
+    "specflow": "bin/specflow.js"
   },
   "files": [
     "bin/",
