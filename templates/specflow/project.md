@@ -1,9 +1,18 @@
+---
+# Specflow 流程設定 — Claude 在 /spec:new 時讀取
+# base_branches:列出哪些分支可以執行 /spec:new(會從這些分支 fork 出 spec 分支)
+# 預設值:[dev, development, develop, main]。依團隊 git workflow 調整
+base_branches: [dev, development]
+---
+
 # <專案名> 專案規範(Project.md)
 
 > 這份文件是專案的「憲法」。Specflow 流程中,任何 design 或 task 產出前,
 > Claude 必須先讀這份。請依你的專案實際情況填寫以下章節。
 >
 > 沒填寫的章節,刪掉即可,**不要保留空白章節**——空白章節會讓 Claude 誤以為「這個面向不重要」。
+>
+> ⚠️ 檔案最上方的 `---` frontmatter 區塊是 specflow 流程設定,**請保留**。
 
 ## 1. 技術棧
 

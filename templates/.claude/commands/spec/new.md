@@ -1,103 +1,258 @@
 ---
-description: 建立一個新的 specflow 變更提案,產生資料夾與 issue.md template
-argument-hint: <task-name>
-allowed-tools: Read, Write, Bash(test:*)
+description: 建立一個新的 specflow 變更提案,自動編號、開分支、產生 issue.md template
+argument-hint: <自由輸入,中文或英文 slug 都可>
+allowed-tools: Read, Write, Bash(test:*), Bash(ls:*), Bash(date:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git branch:*), Bash(git checkout:*), Bash(git symbolic-ref:*)
 ---
 
 # /spec:new — 建立新的 specflow 提案
 
-使用者要求建立一個新的 specflow 提案,task name 為:`$ARGUMENTS`
+使用者輸入:`$ARGUMENTS`
+
+這個輸入可能是自然語言描述(中文或混合)、也可能是英文 slug。
+你的任務是把它轉成「`NNNN-<英文-slug>`」格式的編號 task,
+並做完所有 git 安全檢查後才實際建立檔案與分支。
 
 ## 你的任務
 
-### Step 1:驗證 task name
+### Step 1:確認在 git repo 內、且至少有一個 commit
 
-檢查 `$ARGUMENTS` 是否符合命名規則:
+!`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
 
-- 只允許小寫英文字母 `a-z` 跟 hyphen `-`
-- 長度 5~50 字元
-- 不可開頭或結尾為 hyphen
-- 不可連續兩個 hyphen
-- 正則:`^[a-z]+(-[a-z]+)*$`
+若輸出包含 `NOT_GIT_REPO` → **立即停止**並告知:
+「specflow 假設你在 git repo 內操作。請先 `git init`,並建立至少一個 commit 後再執行 /spec:new。」
 
-若不符合,**立即停止**並告訴使用者違反哪一條,給出修正建議。
-範例:`Refactor_Controller`(❌ 含底線與大寫)、`重構-proxy`(❌ 含中文)、
-`refactor-controller-and-readme`(✅)。
+接著確認有 initial commit(否則後續 `git rev-parse HEAD` 會炸):
 
-### Step 2:檢查 issue.md 是否已存在
+!`git rev-parse --verify HEAD 2>/dev/null || echo "NO_INITIAL_COMMIT"`
 
-執行:
+若輸出包含 `NO_INITIAL_COMMIT` → **立即停止**並告知:
 
-!`test -f specflow/changes/$ARGUMENTS/issue.md`
+> 目前 repo 還沒有任何 commit(沒有 initial commit)。請先做一個 commit 再執行 /spec:new,例如:
+>
+> ```
+> git add .
+> git commit -m "chore: initial commit (specflow install)"
+> ```
+>
+> 因為 /spec:new 要從目前分支拉出新分支,沒 commit 就沒分支可拉。
 
-若 exit code = 0(檔案已存在)→ **立即停止**並告訴使用者
-「specflow/changes/$ARGUMENTS/issue.md 已存在,請改用其他名稱或刪除既有資料夾」。
+⚠️ 為什麼這兩條要加 `2>/dev/null || echo "..."`:
+Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行非零 exit 加 stderr 會 abort 整個指令。因此**所有可能失敗的 git 命令**都要這樣寫,把失敗轉成 stdout 上的 sentinel 字串,Claude 看內容判斷,而不是靠 exit code。
 
-### Step 3:確認 specflow/project.md 存在
+### Step 2:確認 specflow/project.md 存在
 
-執行:
+!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
 
-!`test -f specflow/project.md`
+若輸出是 `MISSING` → **立即停止**並告知:
+「specflow/project.md 不存在。這是 specflow 流程的核心規範檔,請先建立此檔案後再執行 /spec:new。可參考 .claude/skills/specflow/SKILL.md 的說明。」
 
-若 exit code != 0(檔案不存在)→ **立即停止**並提醒使用者:
-「specflow/project.md 不存在。這是 specflow 流程的核心規範檔,
-請先建立此檔案後再執行 /spec:new。可參考 .claude/skills/specflow/SKILL.md 的說明。」
+### Step 3:讀取 project.md 取得 base_branches 設定
 
-### Step 4:讀取 issue.md template
+使用 **Read 工具**讀取 `specflow/project.md`。
+
+從檔案最上方的 YAML frontmatter(兩個 `---` 之間)解析 `base_branches` 設定:
+
+- 若 frontmatter 存在且有 `base_branches` 鍵 → 使用該清單
+- 若 frontmatter 不存在、或沒有 `base_branches` 鍵 → 使用預設值
+  `[dev, development, develop, main]`
+
+把解析結果記為 `base_branches`。
+
+### Step 4:檢查目前分支在 base_branches 之內
+
+!`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "DETACHED_OR_ERROR"`
+
+把輸出記為 `current_branch`,**同時**記為 `base_branch`(這個值要保留到 Step 12
+寫入 issue.md frontmatter,因為 Step 9 切到新分支後 `current_branch` 就會變)。
+
+若輸出是 `DETACHED_OR_ERROR` → **立即停止**並告知:
+「無法取得目前分支(可能在 detached HEAD 狀態)。請先 `git checkout <base_branch>` 切到正常分支後再執行。」
+
+若 `current_branch` **不在** `base_branches` 清單中 →
+**立即停止**並告知:
+
+> 目前在 `<current_branch>` 分支,/spec:new 必須從以下分支之一開始:
+> `<base_branches 清單>`
+>
+> 請先 `git checkout <base_branch>` 後再執行。
+>
+> 若你的團隊使用其他 base branch,可在 `specflow/project.md` 的 frontmatter
+> 修改 `base_branches` 設定。
+
+### Step 5:檢查 working tree 是否乾淨
+
+!`git status --porcelain 2>/dev/null`
+
+若輸出**非空**(有未 commit 的變更或未追蹤檔案)→ **立即停止**並告知:
+
+> Working tree 不乾淨,有未 commit 的變更:
+>
+> ```
+> <git status --porcelain 的輸出>
+> ```
+>
+> 請先 `git commit` 或 `git stash` 後再執行 /spec:new,
+> 避免這些變更被帶到新建的 spec 分支上。
+
+### Step 6:計算下一個編號
+
+列出現有 spec 資料夾:
+
+!`ls -1 specflow/changes/ 2>/dev/null`
+
+從輸出中**過濾出符合 `^[0-9]{4}-` 格式的資料夾名稱**(忽略 `.gitkeep`、舊式無編號資料夾、或其他雜項):
+
+- 若一個都沒有 → `next_number = "0001"`
+- 若有 → 取所有編號中的**最大值** + 1,以 4 位數零填補
+  - 例:現有 `0001-x`、`0003-y` → max = 3 → `next_number = "0004"`(注意:用 max 不是用「資料夾數量」,刪掉的編號不會回收)
+
+### Step 7:決定 slug
+
+判斷 `$ARGUMENTS` 是否已經是合法英文 slug:
+
+- 合法 slug 規則:`^[a-z]+(-[a-z]+)*$`(只有小寫字母與 hyphen,長度 5~50)
+- ✅ 合法:`refactor-controller`、`add-helper-function`
+- ❌ 不合法:`重構 proxy`、`Refactor Controller`、`fix bug #123`
+
+#### 7a:若 `$ARGUMENTS` 已是合法 slug
+
+`slug = $ARGUMENTS`,直接使用。
+
+#### 7b:若 `$ARGUMENTS` 不是合法 slug(中文或自由文字)
+
+**你**(Claude)依下列原則產出 slug:
+
+- 全部小寫
+- 只用 `a-z` 與 hyphen
+- 動詞用對應的英文(重構→`refactor`、新增→`add`、修正→`fix`、初始化→`init`、移除→`remove`、優化→`optimize` 等)
+- **技術名詞保留**(controller、proxy、migration、API 等中英文都直接使用)
+- 移除冗詞(「的」「相關的」「一些」)
+- 控制長度在 3~6 個 hyphen-separated 詞之間,讓資料夾名好讀
+- 範例:
+  - `重構 campaign proxy` → `refactor-campaign-proxy`
+  - `新增 user repository 的快取層` → `add-user-repository-cache`
+  - `修掉那個 webhook 重複觸發的 bug` → `fix-webhook-duplicate-trigger`
+
+把產出的字串記為 `slug`。**不需要問使用者確認**,直接進入下一步;
+若使用者覺得 slug 不好,看到 Step 13 的回報後可以自行 `mv` 資料夾與重新命名分支。
+
+### Step 8:組合最終 task-name 與檢查分支不存在
+
+`task_name = "{next_number}-{slug}"`(例:`0001-refactor-campaign-proxy`)
+
+確認對應分支不存在。**使用 Bash 工具**執行(把 `TASK_NAME` 替換成上面組好的 `task_name`):
+
+```
+git rev-parse --verify "refs/heads/TASK_NAME"
+```
+
+⚠️ 不要用 `!\`...\`` 內嵌語法寫這條,因為 Claude Code 的權限檢查會把 `<...>` 形式的占位符當成 shell redirect 而失敗。所有需要 Claude 替換變數的命令都要透過 Bash 工具直接呼叫,不可走 `!\`...\``。
+
+若 exit code = 0(分支已存在,通常是先前殘留)→ **立即停止**並告知:
+
+> 分支 `<task_name>` 已存在。這通常是先前 /spec:new 中斷後的殘留。
+>
+> 請手動處理:
+> - 若該分支已無用:`git branch -D <task_name>`
+> - 若想繼續使用:`git checkout <task_name>` 後 review 既有檔案
+
+### Step 9:建立並切換到新分支
+
+**使用 Bash 工具**執行(把 `TASK_NAME` 替換成上面組好的 `task_name`):
+
+```
+git checkout -b TASK_NAME
+```
+
+(同樣不能用 `!\`...\`` 寫,理由同 Step 8。)
+
+成功後 `current_branch = task_name`。
+
+### Step 10:讀取 issue.md template
 
 使用 **Read 工具**讀取 `.claude/skills/specflow/templates/issue.md` 的完整內容。
 
-### Step 5:寫入新檔案(替換標題占位符)
+### Step 11:取得今日日期
 
-使用 **Write 工具**將 Step 4 讀到的 template 內容寫入:
+!`date +%Y-%m-%d`
 
-`specflow/changes/$ARGUMENTS/issue.md`
+把輸出記為 `created_at`(例:`2026-05-07`)。
 
-Write 工具會自動建立必要的父目錄(`specflow/changes/$ARGUMENTS/`),
-**不需要先用 bash mkdir**。
+### Step 12:寫入新檔案(替換 frontmatter 與標題占位符)
 
-#### 標題占位符替換
+使用 **Write 工具**將 Step 10 讀到的 template 內容寫入:
 
-template 第一行是:
+`specflow/changes/<task_name>/issue.md`
+
+Write 工具會自動建立必要的父目錄,**不需要先用 bash mkdir**。
+
+寫入時要做**三處**占位符替換:
+
+#### 替換 1:frontmatter 的 `<BASE_BRANCH>`
+
+template 開頭的 frontmatter 是:
+
+```yaml
+---
+base_branch: <BASE_BRANCH>
+created_at: <CREATED_AT>
+---
+```
+
+把 `<BASE_BRANCH>` 換成 Step 4 記下的 `base_branch`(例:`dev`)。
+
+#### 替換 2:frontmatter 的 `<CREATED_AT>`
+
+把 `<CREATED_AT>` 換成 Step 11 記下的 `created_at`(例:`2026-05-07`)。
+
+#### 替換 3:標題占位符
+
+template 緊接 frontmatter 之後的第一行 markdown 是:
 
 ```
 # Issue: <一句話標題,描述你想做什麼>
 ```
 
-寫入時,**只替換這一行的占位符**,改成:
+把這一行替換成:
 
 ```
-# Issue: <task-name 的中文翻譯> (<原 task-name>)
+# Issue: <中文標題> (<task_name>)
 ```
 
-範例:
+「中文標題」依輸入來源決定:
 
-- `init-migration-data` → `# Issue: 初始化 migration 資料 (init-migration-data)`
-- `refactor-campaign-proxy` → `# Issue: 重構 campaign proxy (refactor-campaign-proxy)`
-- `add-helper-function` → `# Issue: 新增 helper function (add-helper-function)`
+- **若 Step 7 走 7a 分支(使用者輸入英文 slug)**:你產出對應的中文翻譯
+  - 例:`refactor-campaign-proxy` → `重構 campaign proxy`
+- **若 Step 7 走 7b 分支(使用者輸入中文/自由文字)**:**直接使用使用者原本的輸入**(不要重新翻譯、不要修飾)
+  - 例:使用者輸入「重構 campaign proxy」→ 標題就是「重構 campaign proxy」
 
-翻譯原則:
+⚠️ 上述三處之外,**其他所有 `<...>` 占位符保持原樣**,讓使用者填寫
+(範圍限制、想解決的問題等區塊)。
 
-- 動詞用中文(`refactor` → 重構、`add` → 新增、`fix` → 修正、`init` → 初始化)
-- **技術名詞保留英文**(migration、controller、helper、API、proxy 等)
-- 翻譯只是輔助理解的初稿,**使用者填 issue.md 時可以自由修改**
-
-⚠️ **只替換第一行的占位符,其他所有 `<...>` 占位符保持原樣**,
-讓使用者填寫。template 中的「想解決的問題」、「期望的結果」、「範圍限制」
-等區塊的占位符不可動。
-
-### Step 6:回報結果
+### Step 13:回報結果
 
 簡短告知使用者:
 
-> ✅ 已建立 `specflow/changes/$ARGUMENTS/issue.md`
+> ✅ 已建立 spec change
 >
-> 請填寫該檔案。**「範圍限制」區塊為必填**,空白會導致 `/spec:design` 拒絕產出。
+> - 資料夾:`specflow/changes/<task_name>/issue.md`
+> - 分支:`<task_name>`(已切換)
 >
-> 完成後執行:`/spec:design $ARGUMENTS`
+> 請編輯 `specflow/changes/<task_name>/issue.md` 填寫內容。
+> **「範圍限制」區塊為必填**,空白會導致 `/spec:design` 拒絕產出。
+>
+> 完成後執行:`/spec:design <task_name>`
+>
+> 若你不喜歡這個 slug,現在還沒有後續檔案引用它,可手動:
+> - `git branch -m <new-name>` 改分支名
+> - `mv specflow/changes/<task_name> specflow/changes/<new-name>` 改資料夾名
 
 ## 重要原則
 
-- **不要嘗試替使用者填寫 issue.md** —— 即使你看得出他想做什麼,讓使用者自己寫
-- **不要進入 design 階段** —— 你的任務在建立 issue.md 後就結束
-- **使用 Write 工具而非 bash mkdir/cp** —— Write 會自動建立父目錄,避免 Claude Code 的目錄建立權限限制
+- **嚴格按 Step 1~5 順序檢查,任一失敗就停下** —— 不要為了「讓使用者順利」而跳過 git 檢查
+- **編號用 max + 1 而非 count + 1** —— 刪除過的編號不要回收
+- **base_branches 從 project.md frontmatter 讀** —— 沒有就用預設,不要寫死
+- **不要嘗試替使用者填寫 issue.md 內文** —— 即使你看得出他想做什麼,讓使用者自己寫
+- **不要進入 design 階段** —— 你的任務在建立 issue.md 與分支後就結束
+- **使用 Write 工具而非 bash mkdir/cp** —— Write 會自動建立父目錄
+- **slug 不需要跟使用者確認** —— 編號保證唯一,使用者不滿意可自行改名

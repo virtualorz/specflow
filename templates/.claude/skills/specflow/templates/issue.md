@@ -1,3 +1,8 @@
+---
+base_branch: <BASE_BRANCH>
+created_at: <CREATED_AT>
+---
+
 # Issue: <一句話標題,描述你想做什麼>
 
 ## 想解決的問題

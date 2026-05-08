@@ -1,6 +1,6 @@
 ---
 name: specflow
-description: A lightweight spec-driven development workflow for Laravel projects. Use this skill when the user invokes /spec:new, /spec:design, /spec:task, or /spec:run commands, refers to files in the specflow/ folder (project.md, issue.md, design.md, task.md), or asks to plan a code change in a structured way. This skill enforces a strict sequence: user writes issue.md → Claude generates design.md → user confirms → Claude generates task.md → user confirms → Claude executes.
+description: A lightweight spec-driven development workflow. Use this skill when the user invokes /spec:new, /spec:design, /spec:run, or /spec:close commands, refers to files in the specflow/ folder (project.md, issue.md, design.md, task.md), or asks to plan a code change in a structured way. This skill enforces a strict sequence: user writes issue.md → Claude generates design.md → user confirms (and discusses) → /spec:run auto-generates task.md and executes → /spec:close merges back to base branch.
 ---
 
 # Specflow:輕量規格驅動開發
@@ -12,12 +12,39 @@ Specflow 主要透過 4 個 slash command 運作。**完整的執行步驟、檔
 
 ## 4 個 slash command 速查
 
-- `/spec:new <task-name>` —— 建立 specflow 任務資料夾與 issue.md template
-- `/spec:design <task-name>` —— 讀 issue.md,產生 design.md
-- `/spec:task <task-name>` —— 讀 design.md,產生 task.md(若有「待討論問題」會先進入討論模式)
-- `/spec:run <task-name>` —— 逐項執行 task.md,完成後寫執行後備註
+- `/spec:new <自由輸入>` —— 自動編號 + 開分支 + 建立 issue.md template(輸入可以是中文或英文 slug)
+- `/spec:design <task-name|編號>` —— 讀 issue.md,產生 design.md
+- `/spec:run <task-name|編號>` —— 檢查 design.md 就緒、處理討論問題、自動產生 task.md、逐項執行
+- `/spec:close` —— 把目前 spec 分支 no-ff merge 回 base branch(自動產生中文 summary commit)
+
+`/spec:design` 與 `/spec:run` 接受兩種輸入:完整 task name(`0002-modify-hello-controller`)或編號簡寫(`0002`、`002`、`2`)。簡寫會自動補零成 4 位數,並在 `specflow/changes/` 中找對應資料夾。
 
 詳細行為見 `.claude/commands/spec/` 底下對應的 .md 檔案。
+
+⚠️ **舊版 `/spec:task` 已併入 `/spec:run`**。原本「產 task.md」與「討論模式」
+都改由 `/spec:run` 依 design.md 的狀態自動分流。
+
+## 任務命名與分支綁定
+
+specflow 把每個 spec change 跟一條 git 分支綁在一起:
+
+- 資料夾命名格式:`NNNN-<英文-slug>`(例:`0001-refactor-campaign-proxy`)
+  - `NNNN` 是 4 位數零填補編號,由 `/spec:new` 自動算出(現有最大編號 + 1)
+  - `<英文-slug>` 是小寫字母與 hyphen
+- **分支名 = 資料夾名**,由 `/spec:new` 自動建立並切換
+- `/spec:new` 必須在「合法的 base branch」上執行(預設 `dev`、`development`、`develop`、`main`)
+  - 可在 `specflow/project.md` 開頭的 frontmatter 用 `base_branches:` 自訂
+
+`<task-name>` 的判斷邏輯(在 `/spec:new` 內):
+
+- 若使用者輸入已符合 `^[a-z]+(-[a-z]+)*$` → 直接當作 slug 使用
+- 否則(中文、含空白、含大寫等) → Claude 翻譯成英文 slug
+- 最終都會加上 `NNNN-` 前綴
+
+`/spec:design` 在分支不符時會**軟性警告但繼續**;
+`/spec:run` 在分支不符時**硬性中止**(因為它會實際改程式碼)。
+`/spec:close` 必須在 spec 分支(`NNNN-...`)上執行,base 分支來源是讀 issue.md
+frontmatter 的 `base_branch` 欄位(由 `/spec:new` 寫入)。
 
 ## 通用設計哲學
 
@@ -47,19 +74,28 @@ Specflow 主要透過 4 個 slash command 運作。**完整的執行步驟、檔
 
 specflow 用「**檔案的狀態**」決定 Claude 該做什麼,而非「**Claude 記住該做什麼**」。
 
-例如 `/spec:task` 的閘門條件是兩個 AND:
+例如 `/spec:run` 的閘門條件是兩個 AND(在實際執行前檢查 design.md):
 
 1. 決策清單全部勾選(沒有 `- [ ]`)
 2. 「待討論問題」區塊清空
 
-只要任一條件不滿足,Claude 就**不可能**進入「產 task 模式」——這是檔案狀態決定的,
-不需要 Claude 自己記得停下來。狀態機的不變式(invariant)比流程控制可靠得多。
+只要任一條件不滿足,Claude 就**不可能**進入「產 task → 執行」流程——這是檔案
+狀態決定的,不需要 Claude 自己記得停下來。狀態機的不變式(invariant)比流程
+控制可靠得多。
 
-### 4. 永遠保留 checkpoint
+### 4. Checkpoint 在 design.md,不在 task.md
 
-每個 slash command 執行完都應該停下來,等使用者明確下一步指令。
-**不要自動串連階段**(例如 `/spec:design` 完成後不可自動產 task.md)——
-specflow 的價值就在於每個階段都讓使用者有機會說「等等」。
+specflow 強制使用者審查的點是 **design.md** 而非 task.md:
+
+- `/spec:design` 產完 design.md 後**一定停下**,等使用者勾選決策、寫待討論問題
+- `/spec:run` 處理完討論模式後也**一定停下**,因為它會把改過的決策 reset 為 `[ ]`
+- 但一旦進入「決策全勾選 + 待討論清空」狀態,`/spec:run` 會**直接產 task.md
+  並開始執行,中間不再 checkpoint**
+
+這個設計反映現實使用模式:design.md 才是規格的真相來源,task.md 是執行用的
+checkbox 清單。使用者反覆審查 design.md、設計對齊後,task.md 通常不需要手動
+review。若仍想看 task.md,可中斷 /spec:run 後再重跑(會偵測到 task.md 已存在
+且全 `[ ]` 而沿用)。
 
 ## 自然語言觸發的引導
 
@@ -67,8 +103,9 @@ specflow 的價值就在於每個階段都讓使用者有機會說「等等」�
 「幫我建立一個 specflow 任務」),**先建議他改用 slash command**,
 以獲得完整的流程保證:
 
-> 「我建議你用 `/spec:new <task-name>` 開始(task-name 用小寫英文跟 hyphen,
->  例如 `refactor-x-controller`)。這會建立任務資料夾與 issue.md template,
->  讓整個流程有檔案軌跡可循。」
+> 「我建議你用 `/spec:new <你想做的事>` 開始(中文或英文都可以,例如
+>  `/spec:new 重構 campaign proxy`)。這會自動編號、開分支、建立任務
+>  資料夾與 issue.md template,讓整個流程有檔案軌跡可循。
+>  跑完之後可用 `/spec:close` 把分支 merge 回 base。」
 
 只有在使用者明確拒絕用 slash command 時,才退而求其次用自然語言走完流程。

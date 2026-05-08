@@ -72,10 +72,11 @@ export async function runInit({ packageRoot }) {
       (技術棧、架構約束、命名慣例等)
 
    2. 重啟 Claude Code 或開新 session,讓它載入新的 slash commands
-      (/spec:new, /spec:design, /spec:task, /spec:run)
+      (/spec:new, /spec:design, /spec:run, /spec:close)
 
-   3. 開始你的第一個 spec:
-      /spec:new my-first-task
+   3. 切到 base branch(預設 dev / development / develop / main),
+      確認 working tree 乾淨,然後開始你的第一個 spec:
+      /spec:new 你想做的事(中文或英文 slug 都可以)
 
    4. 把 specflow 的安裝 commit 進 git:
       git add .claude/ specflow/
