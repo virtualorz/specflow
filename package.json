@@ -1,6 +1,6 @@
 {
   "name": "@virtualorz/specflow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A lightweight spec-driven development workflow for Claude Code",
   "type": "module",
   "bin": {
