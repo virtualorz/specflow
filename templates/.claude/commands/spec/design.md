@@ -39,7 +39,25 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 
 ⚠️ 從這一步之後,**只用 `task_name`**(不要再用 `$ARGUMENTS`)。
 
-#### Step 0c:檢查目前分支是否相符(軟性提醒)
+#### Step 0c:讀取 project.md 取得 git_flow 設定
+
+先用 bash 確認 project.md 存在(後面 Step 1 還會再嚴格檢查一次,這裡先做以決定 Step 0d 是否要跑):
+
+!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
+
+若輸出是 `MISSING` → 跳過 Step 0d(分支提醒),直接進入 Step 1(Step 1 會正式中止整個流程)。
+
+若 `OK`,使用 **Read 工具**讀取 `specflow/project.md`。
+
+從檔案最上方的 YAML frontmatter 解析 `git_flow`:
+- 若 frontmatter 存在且有 `git_flow` 鍵 → 使用該值(`enabled` / `disabled`)
+- 若 frontmatter 不存在、或沒有 `git_flow` 鍵 → **預設為 `enabled`**(向後相容)
+
+把結果記為 `git_flow`。
+
+#### Step 0d:[若 git_flow=enabled] 檢查目前分支是否相符(軟性提醒)
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 0d 跳過**,直接進入 Step 1。
 
 !`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "NOT_GIT_OR_NO_HEAD"`
 

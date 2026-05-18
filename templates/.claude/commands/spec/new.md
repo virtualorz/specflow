@@ -12,14 +12,57 @@ allowed-tools: Read, Write, Bash(test:*), Bash(ls:*), Bash(date:*), Bash(git rev
 你的任務是把它轉成「`NNNN-<英文-slug>`」格式的編號 task,
 並做完所有 git 安全檢查後才實際建立檔案與分支。
 
+⚠️ 本指令會先讀 `specflow/project.md` 的 `git_flow` 設定:
+- `git_flow: enabled`(預設) → 走完整流程,包含 git repo 檢查、base_branch 檢查、自動開分支
+- `git_flow: disabled` → **跳過所有 git 操作**,只建立 spec 資料夾與 issue.md。
+  分支管理由使用者自行處理。
+
 ## 你的任務
 
-### Step 1:確認在 git repo 內、且至少有一個 commit
+### Step 1:確認 specflow/project.md 存在
+
+!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
+
+若輸出是 `MISSING` → **立即停止**並告知:
+「specflow/project.md 不存在。這是 specflow 流程的核心規範檔,請先建立此檔案後再執行 /spec:new。可參考 .claude/skills/specflow/SKILL.md 的說明。」
+
+### Step 2:讀取 project.md 取得 git_flow 與 base_branches 設定
+
+使用 **Read 工具**讀取 `specflow/project.md`。
+
+從檔案最上方的 YAML frontmatter(兩個 `---` 之間)解析:
+
+#### 解析 `git_flow`
+
+- 若 frontmatter 存在且有 `git_flow` 鍵 → 使用該值(`enabled` / `disabled`)
+- 若 frontmatter 不存在、或沒有 `git_flow` 鍵 → **預設為 `enabled`**(向後相容)
+
+把解析結果記為 `git_flow`。
+
+#### 解析 `base_branches`
+
+- 若 frontmatter 存在且有 `base_branches` 鍵 → 使用該清單
+- 若 frontmatter 不存在、或沒有 `base_branches` 鍵 → 使用預設值
+  `[dev, development, develop, main]`
+
+把解析結果記為 `base_branches`。
+
+⚠️ 若 `git_flow == "disabled"`,後續所有與 git 相關的 Step(3、4、5、8 後半、9)都**跳過**,但仍要做檔案層面的工作(Step 6、7、8 前半、10、11、12、13)。
+
+完成 Step 2 解析後若是 disabled,**先告知使用者**再進入後續流程:
+
+> ℹ️ 偵測到 `git_flow: disabled`,本次將跳過分支建立與 git 安全檢查,只建立 spec 資料夾。
+
+### Step 3:[若 git_flow=enabled] 確認在 git repo 內、且至少有一個 commit
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 3 跳過**,直接進入 Step 6(Step 4、5 也跳過)。
 
 !`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
 
 若輸出包含 `NOT_GIT_REPO` → **立即停止**並告知:
-「specflow 假設你在 git repo 內操作。請先 `git init`,並建立至少一個 commit 後再執行 /spec:new。」
+「specflow 假設你在 git repo 內操作。請先 `git init`,並建立至少一個 commit 後再執行 /spec:new。
+
+如果你的專案不打算用 git,可以在 `specflow/project.md` 的 frontmatter 設定 `git_flow: disabled` 後再執行。」
 
 接著確認有 initial commit(否則後續 `git rev-parse HEAD` 會炸):
 
@@ -35,30 +78,15 @@ allowed-tools: Read, Write, Bash(test:*), Bash(ls:*), Bash(date:*), Bash(git rev
 > ```
 >
 > 因為 /spec:new 要從目前分支拉出新分支,沒 commit 就沒分支可拉。
+>
+> (或在 `specflow/project.md` 設 `git_flow: disabled` 略過 git 整合。)
 
 ⚠️ 為什麼這兩條要加 `2>/dev/null || echo "..."`:
 Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行非零 exit 加 stderr 會 abort 整個指令。因此**所有可能失敗的 git 命令**都要這樣寫,把失敗轉成 stdout 上的 sentinel 字串,Claude 看內容判斷,而不是靠 exit code。
 
-### Step 2:確認 specflow/project.md 存在
+### Step 4:[若 git_flow=enabled] 檢查目前分支在 base_branches 之內
 
-!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
-
-若輸出是 `MISSING` → **立即停止**並告知:
-「specflow/project.md 不存在。這是 specflow 流程的核心規範檔,請先建立此檔案後再執行 /spec:new。可參考 .claude/skills/specflow/SKILL.md 的說明。」
-
-### Step 3:讀取 project.md 取得 base_branches 設定
-
-使用 **Read 工具**讀取 `specflow/project.md`。
-
-從檔案最上方的 YAML frontmatter(兩個 `---` 之間)解析 `base_branches` 設定:
-
-- 若 frontmatter 存在且有 `base_branches` 鍵 → 使用該清單
-- 若 frontmatter 不存在、或沒有 `base_branches` 鍵 → 使用預設值
-  `[dev, development, develop, main]`
-
-把解析結果記為 `base_branches`。
-
-### Step 4:檢查目前分支在 base_branches 之內
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 4 跳過**。`base_branch` 變數設為 `null`(後續 Step 12 會用到)。
 
 !`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "DETACHED_OR_ERROR"`
 
@@ -79,7 +107,9 @@ Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行�
 > 若你的團隊使用其他 base branch,可在 `specflow/project.md` 的 frontmatter
 > 修改 `base_branches` 設定。
 
-### Step 5:檢查 working tree 是否乾淨
+### Step 5:[若 git_flow=enabled] 檢查 working tree 是否乾淨
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 5 跳過**。
 
 !`git status --porcelain 2>/dev/null`
 
@@ -140,6 +170,8 @@ Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行�
 
 `task_name = "{next_number}-{slug}"`(例:`0001-refactor-campaign-proxy`)
 
+⚠️ 若 `git_flow == "disabled"` → 組好 `task_name` 後**直接跳到 Step 10**(Step 8 後半與 Step 9 都跳過)。
+
 確認對應分支不存在。**使用 Bash 工具**執行(把 `TASK_NAME` 替換成上面組好的 `task_name`):
 
 ```
@@ -156,7 +188,9 @@ git rev-parse --verify "refs/heads/TASK_NAME"
 > - 若該分支已無用:`git branch -D <task_name>`
 > - 若想繼續使用:`git checkout <task_name>` 後 review 既有檔案
 
-### Step 9:建立並切換到新分支
+### Step 9:[若 git_flow=enabled] 建立並切換到新分支
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 9 跳過**。
 
 **使用 Bash 工具**執行(把 `TASK_NAME` 替換成上面組好的 `task_name`):
 
@@ -199,7 +233,10 @@ created_at: <CREATED_AT>
 ---
 ```
 
-把 `<BASE_BRANCH>` 換成 Step 4 記下的 `base_branch`(例:`dev`)。
+依 `git_flow` 設定處理:
+
+- **`git_flow == "enabled"`**:把 `<BASE_BRANCH>` 換成 Step 4 記下的 `base_branch`(例:`dev`)
+- **`git_flow == "disabled"`**:把 `<BASE_BRANCH>` 換成 `null`(沒有 base 分支可記)。`/spec:close` 在 disabled 模式下不會用到這個欄位
 
 #### 替換 2:frontmatter 的 `<CREATED_AT>`
 
@@ -231,6 +268,8 @@ template 緊接 frontmatter 之後的第一行 markdown 是:
 
 ### Step 13:回報結果
 
+#### 若 `git_flow == "enabled"`
+
 簡短告知使用者:
 
 > ✅ 已建立 spec change
@@ -247,12 +286,29 @@ template 緊接 frontmatter 之後的第一行 markdown 是:
 > - `git branch -m <new-name>` 改分支名
 > - `mv specflow/changes/<task_name> specflow/changes/<new-name>` 改資料夾名
 
+#### 若 `git_flow == "disabled"`
+
+簡短告知使用者:
+
+> ✅ 已建立 spec change(`git_flow: disabled` 模式)
+>
+> - 資料夾:`specflow/changes/<task_name>/issue.md`
+> - 分支:**未建立**(由你自行決定是否要開分支)
+>
+> 請編輯 `specflow/changes/<task_name>/issue.md` 填寫內容。
+> **「範圍限制」區塊為必填**,空白會導致 `/spec:design` 拒絕產出。
+>
+> 完成後執行:`/spec:design <task_name>`
+>
+> ⚠️ disabled 模式下,`/spec:run` **不會檢查當前分支**——請自行確保在正確的 git 狀態下執行。`/spec:close` 也只會做 task.md 完整性檢查,不會自動 commit / merge。
+
 ## 重要原則
 
-- **嚴格按 Step 1~5 順序檢查,任一失敗就停下** —— 不要為了「讓使用者順利」而跳過 git 檢查
+- **嚴格按 Step 1~5 順序檢查,任一失敗就停下** —— 不要為了「讓使用者順利」而跳過 git 檢查(disabled 模式下整段才會跳過)
 - **編號用 max + 1 而非 count + 1** —— 刪除過的編號不要回收
 - **base_branches 從 project.md frontmatter 讀** —— 沒有就用預設,不要寫死
+- **git_flow 預設 enabled** —— 沒設定就維持原本行為,確保升級向後相容
 - **不要嘗試替使用者填寫 issue.md 內文** —— 即使你看得出他想做什麼,讓使用者自己寫
-- **不要進入 design 階段** —— 你的任務在建立 issue.md 與分支後就結束
+- **不要進入 design 階段** —— 你的任務在建立 issue.md(與分支,若啟用)後就結束
 - **使用 Write 工具而非 bash mkdir/cp** —— Write 會自動建立父目錄
 - **slug 不需要跟使用者確認** —— 編號保證唯一,使用者不滿意可自行改名

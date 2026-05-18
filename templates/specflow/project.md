@@ -1,7 +1,14 @@
 ---
-# Specflow 流程設定 — Claude 在 /spec:new 時讀取
-# base_branches:列出哪些分支可以執行 /spec:new(會從這些分支 fork 出 spec 分支)
-# 預設值:[dev, development, develop, main]。依團隊 git workflow 調整
+# Specflow 流程設定 — Claude 在所有 /spec:* 指令中讀取
+#
+# git_flow:是否啟用 git 整合。預設 enabled,維持原本的「自動開分支 + no-ff merge」流程
+#   - enabled  → /spec:new 會切到新分支、/spec:run 強制檢查分支、/spec:close 會自動 commit + merge
+#   - disabled → 全部跳過 git 操作。spec 資料夾仍會建立,但分支與 merge 由你自行處理
+#               適合不想被 specflow 動 git 的個人專案、或還沒進入 git workflow 的早期專案
+# base_branches:git_flow=enabled 時,列出哪些分支可以執行 /spec:new(會從這些分支 fork 出 spec 分支)
+#   預設值:[dev, development, develop, main]。依團隊 git workflow 調整
+#   git_flow=disabled 時此設定會被忽略
+git_flow: enabled
 base_branches: [dev, development]
 ---
 

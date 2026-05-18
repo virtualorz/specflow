@@ -1,36 +1,59 @@
 ---
-description: 把目前 spec 分支的變更合併回 base branch(no-ff merge,自動產生中文 summary commit)
-argument-hint: (不需要參數,自動偵測目前所在的 spec 分支)
-allowed-tools: Read, Bash(test:*), Bash(cat:*), Bash(grep:*), Bash(date:*), Bash(git:*)
+description: 把目前 spec 分支的變更合併回 base branch(no-ff merge,自動產生中文 summary commit;git_flow=disabled 時改為僅做完整性檢查與 summary 產生)
+argument-hint: (git_flow=enabled 時不需要;git_flow=disabled 時需傳 task-name 或編號簡寫)
+allowed-tools: Read, Bash(test:*), Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(date:*), Bash(git:*)
 ---
 
 # /spec:close — 收尾並合併回 base branch
 
-⚠️ 這個指令會做兩件實際影響 git 歷史的事:
+⚠️ 這個指令的行為依 `specflow/project.md` 的 `git_flow` 設定而不同:
+
+**`git_flow: enabled`(預設)**:
 1. 在 spec 分支上 commit 未存檔的變更(若有)
 2. 切到 base branch 執行 `git merge --no-ff` 把 spec 分支合進去
 
 兩個 commit 訊息都會用同一個自動產生的中文 summary。
 
+**`git_flow: disabled`**:
+1. 只做 task.md 完整性檢查(未勾選任務?執行後備註空白?)
+2. 印出建議的 summary commit 訊息
+3. **不做任何 git 操作**(commit / checkout / merge 全部跳過)
+4. 由使用者自行決定後續 git 流程
+
 ## 你的任務
 
-### Step 1:讀取 specflow/project.md 取得 base_branches 設定
+### Step 1:讀取 specflow/project.md 取得 git_flow 與 base_branches 設定
+
+先用 bash 確認存在(failsafe):
+
+!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
+
+若 `MISSING` → **立即停止**:「specflow/project.md 不存在,無法執行 /spec:close。」
 
 使用 **Read 工具**讀取 `specflow/project.md`。
 
-從 frontmatter 解析 `base_branches`(沒設定就用預設 `[dev, development, develop, main]`)。
-這個清單**僅供 Step 6 驗證 base_branch 在合法範圍內**——實際要 merge 到哪個分支,
-是看 issue.md 的 frontmatter 而不是這份。
+從 frontmatter 解析:
 
-### Step 2:【硬閘門】確認在 git repo 內
+- `git_flow`:有則用該值,沒有則預設 `enabled`(向後相容)
+- `base_branches`:有則用該清單,沒有則預設 `[dev, development, develop, main]`
+
+把結果記為 `git_flow` 與 `base_branches`。
+
+⚠️ 從這裡開始,所有後續 Step 都會依 `git_flow` 分流。每個 Step 開頭會明示是否要跳過。
+
+### Step 2:[若 git_flow=enabled] 確認在 git repo 內
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 2 跳過**,直接進入 Step 3。
 
 !`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
 
-若輸出是 `NOT_GIT_REPO` → **立即停止**:「specflow 假設你在 git repo 內操作。」
+若輸出是 `NOT_GIT_REPO` → **立即停止**:「specflow 假設你在 git repo 內操作。若你不打算用 git,可在 project.md 設 `git_flow: disabled`。」
 
 ⚠️ 本檔案中所有可能失敗的 git 命令都用 `2>/dev/null || echo "SENTINEL"` 包起來,避免 Claude Code 在載入 slash command 時把 stderr 視為錯誤而 abort 整個指令。
 
-### Step 3:【硬閘門】確認沒處於未完成的 merge / rebase / cherry-pick
+### Step 3:[若 git_flow=enabled] 確認沒處於未完成的 merge / rebase / cherry-pick
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 3 跳過**。
 
 !`test -e .git/MERGE_HEAD`
 !`test -e .git/REBASE_HEAD`
@@ -45,17 +68,55 @@ allowed-tools: Read, Bash(test:*), Bash(cat:*), Bash(grep:*), Bash(date:*), Bash
 > 請先 `git status` 確認、解完衝突後 `git commit` 或 `git rebase --continue` /
 > `git merge --abort` / `git rebase --abort` 收尾,再重跑 /spec:close。
 
-### Step 4:【硬閘門】取得目前分支並驗證是 spec 分支
+### Step 4:取得 spec_branch(視 git_flow 分流)
+
+#### Step 4a:若 `git_flow == "enabled"` — 從當前分支推導
 
 !`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "NO_HEAD"`
 
 把輸出記為 `spec_branch`。若 `NO_HEAD` → 立即停止:「無法取得目前分支(空 repo 或 detached HEAD),/spec:close 無法處理。」
 
-否則驗證是否符合 `^[0-9]{4}-[a-z]+(-[a-z]+)*$`:
+驗證是否符合 `^[0-9]{4}-[a-z]+(-[a-z]+)*$`:
 
 - ❌ 不符合 → 立即停止:
   > 目前在 `<spec_branch>` 分支,/spec:close 必須在 spec 分支(`NNNN-<slug>`)上執行。
   > 例如:`0001-refactor-campaign-proxy`。
+
+#### Step 4b:若 `git_flow == "disabled"` — 從 $ARGUMENTS 解析
+
+若 `$ARGUMENTS` 為空 → **立即停止**:
+
+> ❌ `git_flow: disabled` 模式下,/spec:close 需要明確傳入 task-name 或編號簡寫。
+>
+> 例如:
+> - `/spec:close 0001-refactor-campaign-proxy`
+> - `/spec:close 0001`
+> - `/spec:close 1`
+
+列出現有 spec change 資料夾:
+
+!`ls -1 specflow/changes/ 2>/dev/null`
+
+把輸出記為 `existing_folders`。
+
+解析 `$ARGUMENTS` 成 `spec_branch`:
+
+- 若 `$ARGUMENTS` 是**純數字**(`^[0-9]+$`)→ 補零成 4 位數(`PADDED`),在 `existing_folders` 中找開頭是 `<PADDED>-` 的資料夾:
+  - 找到 → `spec_branch` = 該資料夾名
+  - 找不到 → 立即停止:「找不到編號 `<PADDED>` 對應的 spec change 資料夾。可用編號:`<列出 existing_folders 中符合格式者>`」
+- 否則(完整 task name)→ `spec_branch = $ARGUMENTS`
+
+驗證 `spec_branch` 對應的資料夾存在:
+
+**使用 Bash 工具**執行(把 `SPEC_BRANCH` 替換為解析得到的值):
+
+```
+test -d specflow/changes/SPEC_BRANCH
+```
+
+非 0 → 立即停止:「找不到 `specflow/changes/<spec_branch>/`。」
+
+⚠️ 從這裡開始,變數名雖叫 `spec_branch`,但 disabled 模式下它指的是 task 資料夾名,而非實際 git 分支。
 
 ### Step 5:【硬閘門】確認 issue.md 存在
 
@@ -69,17 +130,19 @@ test -f specflow/changes/SPEC_BRANCH/issue.md
 
 非 0 → **立即停止**:
 > 找不到 `specflow/changes/<spec_branch>/issue.md`。
-> 這個分支不像是用 /spec:new 建立的 spec 分支,/spec:close 無法處理。
+> 這個分支/資料夾不像是用 /spec:new 建立的,/spec:close 無法處理。
 
-### Step 6:【硬閘門】解析 issue.md frontmatter,取得 base_branch
+### Step 6:[若 git_flow=enabled] 解析 issue.md frontmatter,取得 base_branch
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 6 跳過**(disabled 模式下不需要 base_branch,因為不會做 merge)。
 
 使用 **Read 工具**讀取 `specflow/changes/<spec_branch>/issue.md`。
 
 從**檔案最上方**(兩個 `---` 之間)的 YAML frontmatter 解析 `base_branch` 鍵:
 
-- 若 frontmatter 不存在、或沒有 `base_branch` 鍵 → **立即停止**:
+- 若 frontmatter 不存在、或沒有 `base_branch` 鍵、或 `base_branch` 是 `null` → **立即停止**:
 
-  > ❌ 找不到 base_branch frontmatter。
+  > ❌ 找不到 base_branch frontmatter(或值為 null)。
   >
   > 請在 `specflow/changes/<spec_branch>/issue.md` 最上方加入:
   >
@@ -95,10 +158,15 @@ test -f specflow/changes/SPEC_BRANCH/issue.md
   > 加完後重跑 /spec:close。
   >
   > ⚠️ 這個欄位是 v0.3+ 才開始寫的,升級前建立的 spec change 需要手動補。
+  > 若是當初在 `git_flow: disabled` 模式下建立的 spec change,你可以:
+  > - 把 project.md 暫時切回 `git_flow: disabled` 走簡化流程(不會做 merge),或
+  > - 填上實際的 base_branch 後維持 enabled 走完整 merge 流程。
 
 - 取到 `base_branch` 值 → 繼續
 
-### Step 7:【硬閘門】驗證 base_branch 在本地真的存在
+### Step 7:[若 git_flow=enabled] 驗證 base_branch 在本地真的存在
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 7 跳過**。
 
 **使用 Bash 工具**執行(把 `BASE_BRANCH` 替換成 Step 6 取到的 `base_branch`):
 
@@ -187,7 +255,18 @@ cat specflow/changes/SPEC_BRANCH/issue.md
 
 把產出記為 `summary`。**控制在 30 字以內**(超過就壓縮)。
 
-### Step 11:依 working tree 狀態決定要不要在 spec 分支建 commit
+---
+
+⚠️ **從這裡開始,流程依 git_flow 分為兩條路徑**:
+
+- `git_flow == "enabled"` → 繼續執行 Step 11~14(完整 git 流程)
+- `git_flow == "disabled"` → **跳過 Step 11~13**,直接進入 Step 14(僅回報)
+
+---
+
+### Step 11:[若 git_flow=enabled] 依 working tree 狀態決定要不要在 spec 分支建 commit
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 11 跳過**。
 
 !`git status --porcelain 2>/dev/null`
 
@@ -223,7 +302,9 @@ git rev-parse HEAD
 → 跳過 commit 步驟。簡短告知:
 > 📝 工作樹乾淨,沒有要在 spec 分支建立新 commit。
 
-### Step 12:切換到 base_branch
+### Step 12:[若 git_flow=enabled] 切換到 base_branch
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 12 跳過**。
 
 **使用 Bash 工具**執行(把 `BASE_BRANCH` 替換成 Step 6 取到的 `base_branch`):
 
@@ -233,7 +314,9 @@ git checkout BASE_BRANCH
 
 若失敗(罕見,例如有覆蓋風險的未追蹤檔案)→ **立即停止**並把錯誤訊息原封轉述給使用者。
 
-### Step 13:執行 no-ff merge
+### Step 13:[若 git_flow=enabled] 執行 no-ff merge
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 13 跳過**。
 
 **使用 Bash 工具**執行(把 `SPEC_BRANCH` 替換成 Step 4 的 `spec_branch`,`SUMMARY_TEXT` 替換成 Step 10 的 `summary`):
 
@@ -281,7 +364,7 @@ git status
 
 ### Step 14:回報完成
 
-(只有 13a 走到這裡)
+#### 若 `git_flow == "enabled"`(只有 13a 走到這裡)
 
 告知使用者:
 
@@ -295,13 +378,41 @@ git status
 > - 推到 remote:`git push`
 > - 刪除 spec 分支:`git branch -d <spec_branch>`(本地)、`git push origin --delete <spec_branch>`(remote,若曾推過)
 
+#### 若 `git_flow == "disabled"`
+
+告知使用者:
+
+> ✅ /spec:close 完整性檢查通過(`git_flow: disabled` 模式)
+>
+> - Spec 資料夾:`specflow/changes/<spec_branch>/`(已完成,task.md 全勾選 + 備註齊全)
+> - 建議的 summary(可直接拿來當 commit message):
+>
+>   ```
+>   <summary>
+>   ```
+>
+> ⚠️ disabled 模式下,本指令**沒有**:
+> - 沒有自動 commit 變更
+> - 沒有切換分支
+> - 沒有 merge 回 base
+>
+> 後續 git 流程由你自行決定。常見作法:
+>
+> ```bash
+> git add -A
+> git commit -m "<summary>"
+> # 然後依你的 workflow merge / PR / push
+> ```
+
 ## 硬規則
 
-- ❌ **不可在分支不符 spec 格式時繼續**(Step 4) — 防呆,避免在 base 分支或其他分支誤跑
-- ❌ **不可在 base_branch frontmatter 缺失時推測** — 寧可報錯讓使用者補,也不要靠 `git merge-base` 猜
-- ❌ **不可在 task.md 不完整時 close** — 沒跑完 /spec:run 就 close 會留下半成品
+- ❌ **git_flow=enabled 時不可在分支不符 spec 格式時繼續**(Step 4a) — 防呆,避免在 base 分支或其他分支誤跑
+- ❌ **git_flow=disabled 時不可缺 $ARGUMENTS**(Step 4b) — 沒分支可推導 spec_name,必須要使用者明指
+- ❌ **不可在 base_branch frontmatter 缺失時推測**(enabled 模式) — 寧可報錯讓使用者補,也不要靠 `git merge-base` 猜
+- ❌ **不可在 task.md 不完整時 close** — 沒跑完 /spec:run 就 close 會留下半成品(不論 git_flow 設定)
 - ❌ **不可自動 abort merge 衝突** — 衝突時把控制權交回使用者
 - ❌ **不可自動 push 到 remote** — 推不推由使用者決定
 - ❌ **不可自動刪除 spec 分支** — 使用者可能還想保留歷史軌跡
 - ❌ **summary 不可超過 30 個中文字** — 簡短易讀為先
 - ❌ **絕對不要用 Read 工具讀 task.md / issue.md 內文**(改動驗證) — 必須用 cat 繞過快取。Step 6 讀 issue.md 取 frontmatter 例外,因為 frontmatter 是 specflow 自己寫的、不會被使用者編輯成多版本
+- ❌ **git_flow=disabled 模式下不可自作主張做任何 git 操作** — 即使看起來「順便做了使用者也會感謝」,也不要。disabled 模式的承諾就是「不動 git」

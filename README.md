@@ -191,6 +191,27 @@ base_branches: [staging, main]
 - `/spec:design`:目前分支不符會**警告但繼續**(允許 cherry-pick / 暫時切離等情境)
 - `/spec:run`:目前分支不符會**直接中止**(因為它會實際改程式碼)
 
+### 關閉 git flow(`git_flow: disabled`)
+
+如果你不希望 specflow 動你的 git(例如:個人筆記專案、還沒進入正式 git workflow 的早期專案、想用 stacked PRs 等其他分支策略),在 `specflow/project.md` 最上方加上:
+
+```yaml
+---
+git_flow: disabled
+---
+```
+
+此模式下:
+
+| 指令 | 行為差異 |
+|------|---------|
+| `/spec:new` | 不檢查 base_branches / working tree、**不開分支**;只建立 `NNNN-<slug>/issue.md`。frontmatter 的 `base_branch` 寫 `null` |
+| `/spec:design` | 不對當前分支做提醒 |
+| `/spec:run` | **不檢查當前分支**——你自己負責切到對的分支 |
+| `/spec:close` | 只做 task.md 完整性檢查 + 印建議的 summary;**不 commit、不切分支、不 merge**。需傳入 task-name(例:`/spec:close 0001`) |
+
+預設值是 `enabled`,所以舊專案升上來不需要動任何設定,行為跟舊版一致。
+
 ### 輸入格式
 
 `/spec:new` 接受兩種輸入:

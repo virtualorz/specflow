@@ -19,7 +19,7 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 
 ## 你的任務
 
-### Step 0:解析 task_name + 強制檢查目前分支(硬閘門)
+### Step 0:解析 task_name + 讀 git_flow + 分支檢查(enabled 時為硬閘門)
 
 #### Step 0a:列出現有 spec change 資料夾
 
@@ -41,7 +41,27 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 
 ⚠️ 從這一步之後,**只用 `task_name`**(不要再用 `$ARGUMENTS`)。
 
-#### Step 0c:強制檢查目前分支
+#### Step 0c:讀取 project.md 取得 git_flow 設定
+
+先用 bash 確認 project.md 存在:
+
+!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
+
+若輸出是 `MISSING` → **立即停止**並告知:「specflow/project.md 不存在,請先建立後再執行 /spec:run。」
+
+使用 **Read 工具**讀取 `specflow/project.md`。從 frontmatter 解析 `git_flow`:
+- 有 `git_flow` 鍵 → 用該值(`enabled` / `disabled`)
+- 沒有 → 預設 `enabled`(向後相容)
+
+把結果記為 `git_flow`。
+
+#### Step 0d:[若 git_flow=enabled] 強制檢查目前分支
+
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 0d 跳過**,直接進入 Step 1。
+告知使用者:
+
+> ℹ️ `git_flow: disabled` —— 略過分支檢查。請自行確保在正確的工作分支上,
+> /spec:run 會直接在當前分支寫程式碼。
 
 !`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
 
@@ -59,8 +79,10 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 > /spec:run 會實際修改程式碼,在錯誤的分支上跑會把變更寫到不該寫的地方。
 >
 > 請先執行:`git checkout <task_name>`,再重新執行 /spec:run。
+>
+> (若你的專案不想用 specflow 管 git,可在 `specflow/project.md` 設 `git_flow: disabled`。)
 
-⚠️ **這裡是硬閘門,不可繞過**。即使使用者口頭說「我知道、繼續」,
+⚠️ **這裡是硬閘門,不可繞過**(git_flow=enabled 時)。即使使用者口頭說「我知道、繼續」,
 也不要自行跳過,要求他們真的切換分支。
 
 ### Step 1:確認 design.md 存在
@@ -433,7 +455,8 @@ cat specflow/changes/TASK_NAME/task.md
 ## 硬規則
 
 - ❌ **絕對不要在 `!\`...\`` 中用 `$ARGUMENTS` 接路徑** —— 編號簡寫情境下會找不到檔案。所有檔案操作改用 Bash 工具配 task_name(命令字串中的 `TASK_NAME` 占位符要替換成 Step 0 解析得到的值)
-- ❌ **絕對不要在分支不符時繼續執行**(Step 0c 是硬閘門) —— 即使使用者說「我知道、繼續」也要求他們切回對應分支
+- ❌ **git_flow=enabled 時絕對不要在分支不符時繼續執行**(Step 0d 是硬閘門) —— 即使使用者說「我知道、繼續」也要求他們切回對應分支
+- ⚠️ **git_flow=disabled 時防護被關閉** —— /spec:run 會直接在當前分支寫程式碼,使用者必須自行確保已切到正確分支。這是 disabled 模式的明確 trade-off,不要靜默地補回 enabled 模式的檢查
 - ❌ **絕對不要在「決策清單未全勾選」+「待討論問題清空」時產 task.md 或執行**
 - ❌ **絕對不要在討論模式中自動產 task.md 或執行**(無論決策清單看起來多完整)
 - ❌ **絕對不要在執行已開始(task.md 有 `[x]`)時重產 task.md** —— 沿用現有計畫

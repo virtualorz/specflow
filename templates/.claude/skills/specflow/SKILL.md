@@ -26,7 +26,7 @@ Specflow 主要透過 4 個 slash command 運作。**完整的執行步驟、檔
 
 ## 任務命名與分支綁定
 
-specflow 把每個 spec change 跟一條 git 分支綁在一起:
+specflow 把每個 spec change 跟一條 git 分支綁在一起(預設行為,可透過 `git_flow` 設定關閉):
 
 - 資料夾命名格式:`NNNN-<英文-slug>`(例:`0001-refactor-campaign-proxy`)
   - `NNNN` 是 4 位數零填補編號,由 `/spec:new` 自動算出(現有最大編號 + 1)
@@ -45,6 +45,26 @@ specflow 把每個 spec change 跟一條 git 分支綁在一起:
 `/spec:run` 在分支不符時**硬性中止**(因為它會實際改程式碼)。
 `/spec:close` 必須在 spec 分支(`NNNN-...`)上執行,base 分支來源是讀 issue.md
 frontmatter 的 `base_branch` 欄位(由 `/spec:new` 寫入)。
+
+## Git Flow 開關
+
+`specflow/project.md` 的 frontmatter 提供 `git_flow` 設定,控制整套流程是否要綁 git:
+
+```yaml
+---
+git_flow: enabled  # 或 disabled
+base_branches: [dev, development]
+---
+```
+
+- **`enabled`(預設)**:維持上節描述的完整行為——/spec:new 自動開分支、/spec:run 強制檢查當前分支、/spec:close 自動 commit + no-ff merge 回 base。
+- **`disabled`**:四個指令仍正常產出 issue.md / design.md / task.md,但**全部跳過 git 操作**:
+  - `/spec:new`:不檢查 base branch、不檢查 working tree、**不開分支**。issue.md frontmatter 的 `base_branch` 寫成 `null`
+  - `/spec:design`:不對分支做任何提醒
+  - `/spec:run`:不檢查當前分支,直接在當前分支寫程式碼(**防護被關閉,使用者自行確保分支正確**)
+  - `/spec:close`:只做 task.md 完整性檢查、印出建議的 summary commit 訊息,**不 commit、不切分支、不 merge**。需要明確傳入 task-name(因為沒有分支可推導)
+
+升級舊專案時若 frontmatter 沒有 `git_flow`,各指令會把它當成 `enabled`,行為跟舊版完全一致——不需要動既有專案的設定就能升上來。
 
 ## 通用設計哲學
 
