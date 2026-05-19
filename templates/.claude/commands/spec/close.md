@@ -266,9 +266,11 @@ cat specflow/changes/SPEC_BRANCH/issue.md
 
 ### Step 11:[若 git_flow=enabled] 依 working tree 狀態決定要不要在 spec 分支建 commit
 
-⚠️ 若 `git_flow == "disabled"` → **整個 Step 11 跳過**。
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 11 跳過**(不解讀下方 bash 輸出)。
 
-!`git status --porcelain 2>/dev/null`
+!`git status --porcelain 2>/dev/null || echo "GIT_STATUS_UNAVAILABLE"`
+
+⚠️ `|| echo "GIT_STATUS_UNAVAILABLE"` 是為了避免在非 git repo(disabled 模式可能遇到)讓 slash command load 失敗。enabled 模式下 Step 2 已驗證在 git repo 內,不會跑到 sentinel 分支。
 
 #### 11a:輸出非空(有未存檔變更)
 

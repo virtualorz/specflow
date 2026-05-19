@@ -109,11 +109,17 @@ Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行�
 
 ### Step 5:[若 git_flow=enabled] 檢查 working tree 是否乾淨
 
-⚠️ 若 `git_flow == "disabled"` → **整個 Step 5 跳過**。
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 5 跳過**(不解讀下方 bash 輸出)。
 
-!`git status --porcelain 2>/dev/null`
+!`git status --porcelain 2>/dev/null || echo "GIT_STATUS_UNAVAILABLE"`
 
-若輸出**非空**(有未 commit 的變更或未追蹤檔案)→ **立即停止**並告知:
+⚠️ 上面的 `|| echo "GIT_STATUS_UNAVAILABLE"` 是為了避免在非 git repo 內(disabled 模式可能會遇到)讓整個 slash command load 失敗。enabled 模式下使用者必在 git repo 內(Step 3 已驗證),不會跑到 sentinel 分支。
+
+判斷規則(只在 `git_flow == "enabled"` 時執行):
+
+- 輸出是 `GIT_STATUS_UNAVAILABLE` → 不可能(enabled 模式下 git 一定可用),直接停下回報異常
+- 輸出**為空** → working tree 乾淨,通過此步
+- 輸出**非空**(有未 commit 的變更或未追蹤檔案)→ **立即停止**並告知:
 
 > Working tree 不乾淨,有未 commit 的變更:
 >
