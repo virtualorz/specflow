@@ -95,9 +95,11 @@ allowed-tools: Read, Bash(test:*), Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(d
 
 列出現有 spec change 資料夾:
 
-!`ls -1 specflow/changes/ 2>/dev/null`
+!`ls -1 specflow/changes/ 2>/dev/null || echo "__SPECFLOW_CHANGES_MISSING__"`
 
-把輸出記為 `existing_folders`。
+⚠️ `|| echo "__SPECFLOW_CHANGES_MISSING__"` 是必要的 fallback:`ls` 對不存在的目錄會 exit 2,Claude Code 載入 slash command 時會把非零 exit 當成 shell error 並 abort(`2>/dev/null` 只擋 stderr)。
+
+把輸出記為 `existing_folders`。若輸出含 `__SPECFLOW_CHANGES_MISSING__` → **立即停止**:「找不到 `specflow/changes/` 目錄,請確認你在專案根目錄、且已安裝 specflow。」
 
 解析 `$ARGUMENTS` 成 `spec_branch`:
 

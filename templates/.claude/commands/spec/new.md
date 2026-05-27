@@ -134,9 +134,13 @@ Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行�
 
 列出現有 spec 資料夾:
 
-!`ls -1 specflow/changes/ 2>/dev/null`
+!`ls -1 specflow/changes/ 2>/dev/null || echo "__SPECFLOW_CHANGES_MISSING__"`
 
-從輸出中**過濾出符合 `^[0-9]{4}-` 格式的資料夾名稱**(忽略 `.gitkeep`、舊式無編號資料夾、或其他雜項):
+⚠️ `|| echo "__SPECFLOW_CHANGES_MISSING__"` 是必要的 fallback:`ls` 對不存在的目錄會 exit 2,Claude Code 載入 slash command 時會把非零 exit 當成 shell error 並 abort(`2>/dev/null` 只擋 stderr)。
+
+若輸出是 `__SPECFLOW_CHANGES_MISSING__`(目錄不存在)→ **視為「還沒有任何 spec」**,`next_number = "0001"`(Step 12 的 Write 工具會自動建立 `specflow/changes/` 父目錄,不需先 mkdir)。
+
+否則從輸出中**過濾出符合 `^[0-9]{4}-` 格式的資料夾名稱**(忽略 `.gitkeep`、舊式無編號資料夾、或其他雜項):
 
 - 若一個都沒有 → `next_number = "0001"`
 - 若有 → 取所有編號中的**最大值** + 1,以 4 位數零填補

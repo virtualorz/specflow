@@ -20,9 +20,17 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 
 #### Step 0a:列出現有 spec change 資料夾
 
-!`ls -1 specflow/changes/ 2>/dev/null`
+!`ls -1 specflow/changes/ 2>/dev/null || echo "__SPECFLOW_CHANGES_MISSING__"`
+
+⚠️ `|| echo "__SPECFLOW_CHANGES_MISSING__"` 是必要的 fallback:`ls` 對不存在的目錄會 exit 2,Claude Code 載入 slash command 時會把這當成 shell error 並 abort 整個指令(`2>/dev/null` 只擋 stderr,擋不掉非零 exit code)。
 
 把這個輸出記為 `existing_folders`(每行一個資料夾名稱)。
+
+若輸出**含 `__SPECFLOW_CHANGES_MISSING__`** → 代表 `specflow/changes/` 目錄不存在,**立即停止**並告知:
+
+> ❌ 找不到 `specflow/changes/` 目錄。常見原因:
+> - 你不在專案根目錄(請 `cd` 到含有 `specflow/` 的目錄再執行)
+> - 這個專案還沒安裝 specflow(請執行 `npx @virtualorz/specflow init`)
 
 #### Step 0b:解析 task_name
 
