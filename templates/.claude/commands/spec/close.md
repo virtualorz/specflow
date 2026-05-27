@@ -22,15 +22,34 @@ allowed-tools: Read, Bash(test:*), Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(d
 
 ## 你的任務
 
+⚠️ **本指令全程用 Bash 工具探測狀態,不依賴載入時的內嵌 ``!`...` ``**。
+原因:內嵌 ``!`...` `` 在載入時執行,其 CWD 不保證等於專案根(monorepo 子目錄或
+異常 session CWD 下,相對路徑 `specflow/...`、`.git/...` 會誤報,但 git 子命令仍正常)。
+改用 Bash 工具並先校正 CWD,可同時根除這個問題與「`ls` exit 2 導致載入 abort」。
+
+### Step 0-root:校正 Bash 工具 CWD 到專案根
+
+**使用 Bash 工具**執行:
+
+```
+test -f specflow/project.md && echo "ROOT_OK" || echo "NEED_RELOCATE"
+```
+
+- 輸出 `ROOT_OK` → CWD 已在專案根,進入 Step 1
+- 輸出 `NEED_RELOCATE` → **使用 Bash 工具**切到 git repo 根再測一次:
+
+  ```
+  cd "$(git rev-parse --show-toplevel 2>/dev/null)" && test -f specflow/project.md && echo "RELOCATED:$(pwd)" || echo "NO_SPECFLOW"
+  ```
+
+  - 輸出 `RELOCATED:<path>` → 已切到專案根(Bash 工具 CWD 在後續調用間持久),進入 Step 1
+  - 輸出 `NO_SPECFLOW` → **立即停止**:「找不到 `specflow/project.md`,請確認你在含有 `specflow/` 的專案目錄、且已安裝 specflow。」
+
+⚠️ 完成本步後,後續所有相對路徑命令(含 `.git/...`、`specflow/...`)都以這個校正後的 CWD 為基準。
+
 ### Step 1:讀取 specflow/project.md 取得 git_flow 與 base_branches 設定
 
-先用 bash 確認存在(failsafe):
-
-!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
-
-若 `MISSING` → **立即停止**:「specflow/project.md 不存在,無法執行 /spec:close。」
-
-使用 **Read 工具**讀取 `specflow/project.md`。
+`specflow/project.md` 已在 Step 0-root 確認存在。使用 **Read 工具**讀取 `specflow/project.md`。
 
 從 frontmatter 解析:
 
@@ -45,34 +64,42 @@ allowed-tools: Read, Bash(test:*), Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(d
 
 ⚠️ 若 `git_flow == "disabled"` → **整個 Step 2 跳過**,直接進入 Step 3。
 
-!`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
+**使用 Bash 工具**執行:
+
+```
+git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"
+```
 
 若輸出是 `NOT_GIT_REPO` → **立即停止**:「specflow 假設你在 git repo 內操作。若你不打算用 git,可在 project.md 設 `git_flow: disabled`。」
-
-⚠️ 本檔案中所有可能失敗的 git 命令都用 `2>/dev/null || echo "SENTINEL"` 包起來,避免 Claude Code 在載入 slash command 時把 stderr 視為錯誤而 abort 整個指令。
 
 ### Step 3:[若 git_flow=enabled] 確認沒處於未完成的 merge / rebase / cherry-pick
 
 ⚠️ 若 `git_flow == "disabled"` → **整個 Step 3 跳過**。
 
-!`test -e .git/MERGE_HEAD`
-!`test -e .git/REBASE_HEAD`
-!`test -d .git/rebase-merge`
-!`test -d .git/rebase-apply`
-!`test -e .git/CHERRY_PICK_HEAD`
+**使用 Bash 工具**執行(用 `git rev-parse --git-path` 取得正確的 .git 路徑,避免 worktree / submodule 下 `.git` 不是目錄的情況;同時不受 CWD 影響):
 
-只要其中**任一 exit code = 0**(代表有殘留的 merge/rebase/cherry-pick 狀態)→
+```
+for f in MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD rebase-merge rebase-apply; do test -e "$(git rev-parse --git-path $f)" && echo "FOUND:$f"; done; echo "DONE"
+```
+
+若輸出**含任何 `FOUND:`**(代表有殘留的 merge/rebase/cherry-pick 狀態)→
 **立即停止**:
 
 > ❌ 偵測到未完成的 merge/rebase/cherry-pick 狀態。
 > 請先 `git status` 確認、解完衝突後 `git commit` 或 `git rebase --continue` /
 > `git merge --abort` / `git rebase --abort` 收尾,再重跑 /spec:close。
 
+若輸出只有 `DONE`(沒有任何 `FOUND:`)→ 乾淨,繼續 Step 4。
+
 ### Step 4:取得 spec_branch(視 git_flow 分流)
 
 #### Step 4a:若 `git_flow == "enabled"` — 從當前分支推導
 
-!`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "NO_HEAD"`
+**使用 Bash 工具**執行:
+
+```
+git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "NO_HEAD"
+```
 
 把輸出記為 `spec_branch`。若 `NO_HEAD` → 立即停止:「無法取得目前分支(空 repo 或 detached HEAD),/spec:close 無法處理。」
 
@@ -93,13 +120,13 @@ allowed-tools: Read, Bash(test:*), Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(d
 > - `/spec:close 0001`
 > - `/spec:close 1`
 
-列出現有 spec change 資料夾:
+列出現有 spec change 資料夾。**使用 Bash 工具**執行(CWD 已在 Step 0-root 校正):
 
-!`ls -1 specflow/changes/ 2>/dev/null || echo "__SPECFLOW_CHANGES_MISSING__"`
+```
+ls -1 specflow/changes/ 2>/dev/null
+```
 
-⚠️ `|| echo "__SPECFLOW_CHANGES_MISSING__"` 是必要的 fallback:`ls` 對不存在的目錄會 exit 2,Claude Code 載入 slash command 時會把非零 exit 當成 shell error 並 abort(`2>/dev/null` 只擋 stderr)。
-
-把輸出記為 `existing_folders`。若輸出含 `__SPECFLOW_CHANGES_MISSING__` → **立即停止**:「找不到 `specflow/changes/` 目錄,請確認你在專案根目錄、且已安裝 specflow。」
+把輸出記為 `existing_folders`(可能為空)。
 
 解析 `$ARGUMENTS` 成 `spec_branch`:
 
@@ -268,11 +295,13 @@ cat specflow/changes/SPEC_BRANCH/issue.md
 
 ### Step 11:[若 git_flow=enabled] 依 working tree 狀態決定要不要在 spec 分支建 commit
 
-⚠️ 若 `git_flow == "disabled"` → **整個 Step 11 跳過**(不解讀下方 bash 輸出)。
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 11 跳過**。
 
-!`git status --porcelain 2>/dev/null || echo "GIT_STATUS_UNAVAILABLE"`
+**使用 Bash 工具**執行:
 
-⚠️ `|| echo "GIT_STATUS_UNAVAILABLE"` 是為了避免在非 git repo(disabled 模式可能遇到)讓 slash command load 失敗。enabled 模式下 Step 2 已驗證在 git repo 內,不會跑到 sentinel 分支。
+```
+git status --porcelain 2>/dev/null
+```
 
 #### 11a:輸出非空(有未存檔變更)
 

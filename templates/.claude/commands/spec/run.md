@@ -19,21 +19,46 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 
 ## 你的任務
 
-### Step 0:解析 task_name + 讀 git_flow + 分支檢查(enabled 時為硬閘門)
+### Step 0:定位專案根 + 解析 task_name + 讀 git_flow + 分支檢查(enabled 時為硬閘門)
+
+⚠️ **本指令的 Step 0 全部用 Bash 工具探測狀態,不依賴載入時的內嵌 ``!`...` ``**。
+原因:內嵌 ``!`...` `` 在 slash command 載入時執行,其 CWD 不保證等於專案根
+(在 monorepo 子目錄或異常 session CWD 下,相對路徑 `specflow/...` 會解析失敗
+而誤報找不到,但 `git` 指令仍正常,因為 git 會向上搜尋 `.git`)。改用 Bash 工具
+並先校正 CWD,可同時根除這個問題與「`ls` exit 2 導致載入 abort」的問題。
+
+#### Step 0-root:校正 Bash 工具 CWD 到專案根
+
+**使用 Bash 工具**執行:
+
+```
+test -f specflow/project.md && echo "ROOT_OK" || echo "NEED_RELOCATE"
+```
+
+- 輸出 `ROOT_OK` → 當前 CWD 已在專案根,進入 Step 0a
+- 輸出 `NEED_RELOCATE` → **使用 Bash 工具**切到 git repo 根再測一次:
+
+  ```
+  cd "$(git rev-parse --show-toplevel 2>/dev/null)" && test -f specflow/project.md && echo "RELOCATED:$(pwd)" || echo "NO_SPECFLOW"
+  ```
+
+  - 輸出 `RELOCATED:<path>` → 已切到專案根。**Bash 工具的 CWD 在後續調用間持久**,所以後面所有相對路徑命令都會正確。進入 Step 0a
+  - 輸出 `NO_SPECFLOW` → **立即停止**並告知:
+    > ❌ 找不到 `specflow/project.md`。請確認:
+    > - 你在含有 `specflow/` 的專案目錄
+    > - 這個專案已安裝 specflow(否則執行 `npx @virtualorz/specflow init`)
+
+⚠️ 完成本步後,後續**所有**相對路徑命令(Step 0a~Step 1~5)都以這個校正後的 CWD 為基準。
 
 #### Step 0a:列出現有 spec change 資料夾
 
-!`ls -1 specflow/changes/ 2>/dev/null || echo "__SPECFLOW_CHANGES_MISSING__"`
+**使用 Bash 工具**執行(CWD 已在 Step 0-root 校正,相對路徑可靠):
 
-⚠️ `|| echo "__SPECFLOW_CHANGES_MISSING__"` 是必要的 fallback:`ls` 對不存在的目錄會 exit 2,Claude Code 載入 slash command 時會把這當成 shell error 並 abort 整個指令(`2>/dev/null` 只擋 stderr,擋不掉非零 exit code)。
+```
+ls -1 specflow/changes/ 2>/dev/null
+```
 
-把這個輸出記為 `existing_folders`(每行一個資料夾名稱)。
-
-若輸出**含 `__SPECFLOW_CHANGES_MISSING__`** → 代表 `specflow/changes/` 目錄不存在,**立即停止**並告知:
-
-> ❌ 找不到 `specflow/changes/` 目錄。常見原因:
-> - 你不在專案根目錄(請 `cd` 到含有 `specflow/` 的目錄再執行)
-> - 這個專案還沒安裝 specflow(請執行 `npx @virtualorz/specflow init`)
+把輸出記為 `existing_folders`(每行一個資料夾名稱;可能為空,代表還沒有任何 spec)。
 
 #### Step 0b:解析 task_name
 
@@ -51,13 +76,7 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 
 #### Step 0c:讀取 project.md 取得 git_flow 設定
 
-先用 bash 確認 project.md 存在:
-
-!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
-
-若輸出是 `MISSING` → **立即停止**並告知:「specflow/project.md 不存在,請先建立後再執行 /spec:run。」
-
-使用 **Read 工具**讀取 `specflow/project.md`。從 frontmatter 解析 `git_flow`:
+`specflow/project.md` 已在 Step 0-root 確認存在。使用 **Read 工具**讀取 `specflow/project.md`。從 frontmatter 解析 `git_flow`:
 - 有 `git_flow` 鍵 → 用該值(`enabled` / `disabled`)
 - 沒有 → 預設 `enabled`(向後相容)
 
@@ -71,12 +90,18 @@ Step 0 會先把它解析成完整的 `task_name`。**之後所有檔案操作�
 > ℹ️ `git_flow: disabled` —— 略過分支檢查。請自行確保在正確的工作分支上,
 > /spec:run 會直接在當前分支寫程式碼。
 
-!`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
+**使用 Bash 工具**執行:
+
+```
+git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"
+```
 
 若輸出是 `NOT_GIT_REPO` → 直接進入 Step 1(舊版 specflow 的相容路徑)。
-若是 git repo,繼續以下檢查:
+若是 git repo,**使用 Bash 工具**繼續:
 
-!`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "NO_HEAD"`
+```
+git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "NO_HEAD"
+```
 
 把輸出記為 `current_branch`。若 `NO_HEAD` → 跳過分支比對直接進入 Step 1(極罕見的空 repo 情境)。
 否則若 `current_branch` **不等於** `task_name` →

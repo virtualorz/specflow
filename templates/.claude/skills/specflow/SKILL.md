@@ -90,6 +90,23 @@ base_branches: [dev, development]
 ⚠️ 唯一例外:`task.md` 在 `/spec:run` 階段需要被 Edit(勾選 checkbox),
 此時必須用 Read 工具(Edit 需要透過 Read 定位行號),但會用 cat 交叉驗證。
 
+### 2.5 載入時內嵌 ``!`...` `` 的兩個陷阱(擴充 command 必讀)
+
+slash command 裡用 ``!`cmd` `` 反引號語法寫的 bash,會在 **Claude Code 載入該 command 的當下**全部執行一次(早於 Claude 進入邏輯判斷)。這帶來兩個雷:
+
+1. **exit code ≥ 2 會 abort 整個 command**。`2>/dev/null` 只擋 stderr,擋不掉 exit code。
+   - `ls` 對不存在的目錄 → exit 2 → abort
+   - `git status` 在非 git repo → exit 128 → abort
+   - (對照:`test` 失敗只 exit 1,**不會** abort,所以 `test ... && echo OK || echo MISSING` 這種寫法安全)
+2. **CWD 不保證等於專案根**。在 monorepo 子目錄或異常 session 下,相對路徑
+   `specflow/...`、`.git/...` 會解析失敗;但 `git` 子命令仍正常(git 會向上搜尋 `.git`)。
+   表現為:`ls specflow/...` 說找不到,但 `git rev-parse` 卻抓得到分支——互相矛盾。
+
+**對策(現行所有 command 已採用)**:凡是會因路徑/狀態而失敗的探測,**一律改用 Bash 工具**(在 Claude 邏輯層執行,不會 abort),並在每個 command 開頭加一個
+**Step 0-root**:先 `test -f specflow/project.md`,失敗就 `cd "$(git rev-parse --show-toplevel)"` 校正 CWD。Bash 工具的 CWD 跨調用持久,校正一次,後續所有相對路徑命令都可靠。
+
+載入時內嵌 ``!`...` `` 只保留給**絕對安全**的指令(例如 `date`,不依賴 CWD、永遠 exit 0)。
+
 ### 3. 狀態機優於流程控制
 
 specflow 用「**檔案的狀態**」決定 Claude 該做什麼,而非「**Claude 記住該做什麼**」。

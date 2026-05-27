@@ -19,12 +19,30 @@ allowed-tools: Read, Write, Bash(test:*), Bash(ls:*), Bash(date:*), Bash(git rev
 
 ## 你的任務
 
-### Step 1:確認 specflow/project.md 存在
+### Step 1:定位專案根並確認 specflow/project.md 存在
 
-!`test -f specflow/project.md && echo "OK" || echo "MISSING"`
+⚠️ **本步用 Bash 工具探測,不用載入時的內嵌 ``!`...` ``**。原因:內嵌 ``!`...` ``
+在載入時執行,其 CWD 不保證等於專案根(monorepo 子目錄或異常 session CWD 下,
+相對路徑 `specflow/...` 會誤報找不到,但 git 指令仍正常)。改用 Bash 工具並先校正 CWD。
 
-若輸出是 `MISSING` → **立即停止**並告知:
-「specflow/project.md 不存在。這是 specflow 流程的核心規範檔,請先建立此檔案後再執行 /spec:new。可參考 .claude/skills/specflow/SKILL.md 的說明。」
+**使用 Bash 工具**執行:
+
+```
+test -f specflow/project.md && echo "ROOT_OK" || echo "NEED_RELOCATE"
+```
+
+- 輸出 `ROOT_OK` → CWD 已在專案根,進入 Step 2
+- 輸出 `NEED_RELOCATE` → **使用 Bash 工具**切到 git repo 根再測一次:
+
+  ```
+  cd "$(git rev-parse --show-toplevel 2>/dev/null)" && test -f specflow/project.md && echo "RELOCATED:$(pwd)" || echo "NO_SPECFLOW"
+  ```
+
+  - 輸出 `RELOCATED:<path>` → 已切到專案根(Bash 工具 CWD 在後續調用間持久),進入 Step 2
+  - 輸出 `NO_SPECFLOW` → **立即停止**並告知:
+    「specflow/project.md 不存在。這是 specflow 流程的核心規範檔,請先確認你在含有 `specflow/` 的專案目錄、且已建立此檔案後再執行 /spec:new。可參考 .claude/skills/specflow/SKILL.md 的說明。」
+
+⚠️ 完成本步後,後續所有相對路徑命令都以這個校正後的 CWD 為基準。
 
 ### Step 2:讀取 project.md 取得 git_flow 與 base_branches 設定
 
@@ -57,16 +75,22 @@ allowed-tools: Read, Write, Bash(test:*), Bash(ls:*), Bash(date:*), Bash(git rev
 
 ⚠️ 若 `git_flow == "disabled"` → **整個 Step 3 跳過**,直接進入 Step 6(Step 4、5 也跳過)。
 
-!`git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"`
+⚠️ 以下 git 探測**用 Bash 工具**執行(不用載入時的內嵌 ``!`...` ``),確保跑在 Step 1 校正後的 CWD 上。**使用 Bash 工具**:
+
+```
+git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT_REPO"
+```
 
 若輸出包含 `NOT_GIT_REPO` → **立即停止**並告知:
 「specflow 假設你在 git repo 內操作。請先 `git init`,並建立至少一個 commit 後再執行 /spec:new。
 
 如果你的專案不打算用 git,可以在 `specflow/project.md` 的 frontmatter 設定 `git_flow: disabled` 後再執行。」
 
-接著確認有 initial commit(否則後續 `git rev-parse HEAD` 會炸):
+接著確認有 initial commit(否則後續 `git rev-parse HEAD` 會炸)。**使用 Bash 工具**:
 
-!`git rev-parse --verify HEAD 2>/dev/null || echo "NO_INITIAL_COMMIT"`
+```
+git rev-parse --verify HEAD 2>/dev/null || echo "NO_INITIAL_COMMIT"
+```
 
 若輸出包含 `NO_INITIAL_COMMIT` → **立即停止**並告知:
 
@@ -81,14 +105,15 @@ allowed-tools: Read, Write, Bash(test:*), Bash(ls:*), Bash(date:*), Bash(git rev
 >
 > (或在 `specflow/project.md` 設 `git_flow: disabled` 略過 git 整合。)
 
-⚠️ 為什麼這兩條要加 `2>/dev/null || echo "..."`:
-Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行非零 exit 加 stderr 會 abort 整個指令。因此**所有可能失敗的 git 命令**都要這樣寫,把失敗轉成 stdout 上的 sentinel 字串,Claude 看內容判斷,而不是靠 exit code。
-
 ### Step 4:[若 git_flow=enabled] 檢查目前分支在 base_branches 之內
 
 ⚠️ 若 `git_flow == "disabled"` → **整個 Step 4 跳過**。`base_branch` 變數設為 `null`(後續 Step 12 會用到)。
 
-!`git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "DETACHED_OR_ERROR"`
+**使用 Bash 工具**執行:
+
+```
+git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "DETACHED_OR_ERROR"
+```
 
 把輸出記為 `current_branch`,**同時**記為 `base_branch`(這個值要保留到 Step 12
 寫入 issue.md frontmatter,因為 Step 9 切到新分支後 `current_branch` 就會變)。
@@ -109,15 +134,16 @@ Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行�
 
 ### Step 5:[若 git_flow=enabled] 檢查 working tree 是否乾淨
 
-⚠️ 若 `git_flow == "disabled"` → **整個 Step 5 跳過**(不解讀下方 bash 輸出)。
+⚠️ 若 `git_flow == "disabled"` → **整個 Step 5 跳過**。
 
-!`git status --porcelain 2>/dev/null || echo "GIT_STATUS_UNAVAILABLE"`
+**使用 Bash 工具**執行:
 
-⚠️ 上面的 `|| echo "GIT_STATUS_UNAVAILABLE"` 是為了避免在非 git repo 內(disabled 模式可能會遇到)讓整個 slash command load 失敗。enabled 模式下使用者必在 git repo 內(Step 3 已驗證),不會跑到 sentinel 分支。
+```
+git status --porcelain 2>/dev/null
+```
 
 判斷規則(只在 `git_flow == "enabled"` 時執行):
 
-- 輸出是 `GIT_STATUS_UNAVAILABLE` → 不可能(enabled 模式下 git 一定可用),直接停下回報異常
 - 輸出**為空** → working tree 乾淨,通過此步
 - 輸出**非空**(有未 commit 的變更或未追蹤檔案)→ **立即停止**並告知:
 
@@ -132,13 +158,13 @@ Claude Code 載入 slash command 時會把所有 `!\`...\`` 跑一次,任一行�
 
 ### Step 6:計算下一個編號
 
-列出現有 spec 資料夾:
+列出現有 spec 資料夾。**使用 Bash 工具**執行(CWD 已在 Step 1 校正):
 
-!`ls -1 specflow/changes/ 2>/dev/null || echo "__SPECFLOW_CHANGES_MISSING__"`
+```
+ls -1 specflow/changes/ 2>/dev/null
+```
 
-⚠️ `|| echo "__SPECFLOW_CHANGES_MISSING__"` 是必要的 fallback:`ls` 對不存在的目錄會 exit 2,Claude Code 載入 slash command 時會把非零 exit 當成 shell error 並 abort(`2>/dev/null` 只擋 stderr)。
-
-若輸出是 `__SPECFLOW_CHANGES_MISSING__`(目錄不存在)→ **視為「還沒有任何 spec」**,`next_number = "0001"`(Step 12 的 Write 工具會自動建立 `specflow/changes/` 父目錄,不需先 mkdir)。
+若輸出為空(目錄不存在或沒有任何資料夾)→ **視為「還沒有任何 spec」**,`next_number = "0001"`(Step 12 的 Write 工具會自動建立 `specflow/changes/` 父目錄,不需先 mkdir)。
 
 否則從輸出中**過濾出符合 `^[0-9]{4}-` 格式的資料夾名稱**(忽略 `.gitkeep`、舊式無編號資料夾、或其他雜項):
 
