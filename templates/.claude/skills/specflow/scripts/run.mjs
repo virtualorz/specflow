@@ -75,15 +75,15 @@ const discussionSection = (() => {
   const m = designContent.match(/^## 待討論問題\s*\n([\s\S]*?)(?=\n^## |$(?![\r\n]))/m);
   return m ? m[1] : '';
 })();
-// 過濾:空行、> 引用、<!-- --> 註解、--- 分隔線
-const meaningfulDiscussionLines = discussionSection
+// 先把多行 HTML 註解整段 strip 掉(template 用 <!-- ... --> 包範例,可能跨多行)
+const stripped = discussionSection.replace(/<!--[\s\S]*?-->/g, '');
+// 再做行過濾:空行、> 引用、--- 分隔線都不算實質內容
+const meaningfulDiscussionLines = stripped
   .split('\n')
   .map(l => l.trim())
   .filter(l =>
     l &&
     !l.startsWith('>') &&
-    !l.startsWith('<!--') &&
-    !l.startsWith('-->') &&
     l !== '---'
   );
 const hasDiscussion = meaningfulDiscussionLines.length > 0;
