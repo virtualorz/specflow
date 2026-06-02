@@ -87,8 +87,13 @@ base_branches: [dev, development]
 所有 slash command 已內建此機制。若你在 slash command 之外的情境讀取這些檔案,
 也應遵循此原則。
 
-⚠️ 唯一例外:`task.md` 在 `/spec:run` 階段需要被 Edit(勾選 checkbox),
-此時必須用 Read 工具(Edit 需要透過 Read 定位行號),但會用 cat 交叉驗證。
+⚠️ 唯一例外:`task.md` 在 `/spec:run` 流程 A 需要被 Edit(勾選 checkbox),
+此時必須用 Read 工具(Edit 需要透過 Read 定位行號)。
+
+📝 **v0.5+ 更新**:design / run / close 三條路徑改走 CLI 化(見 §2.6),`.mjs` 用
+`fs.readFileSync` 直接讀檔,**沒有 Claude Code 工具層快取**。所以本節原則只剩
+`/spec:run` 流程 A 的 task.md 還需要遵守(Edit 必須先 Read)。其他情境下,
+.md 端**完全不該**用 Read 或 cat 重讀 issue/design/project —— JSON 已給最新內容。
 
 ### 2.5 載入時內嵌 ``!`...` `` 的兩個陷阱(擴充 command 必讀)
 
@@ -106,6 +111,61 @@ slash command 裡用 ``!`cmd` `` 反引號語法寫的 bash,會在 **Claude Code
 **Step 0-root**:先 `test -f specflow/project.md`,失敗就 `cd "$(git rev-parse --show-toplevel)"` 校正 CWD。Bash 工具的 CWD 跨調用持久,校正一次,後續所有相對路徑命令都可靠。
 
 載入時內嵌 ``!`...` `` 只保留給**絕對安全**的指令(例如 `date`,不依賴 CWD、永遠 exit 0)。
+
+### 2.6 把固定邏輯抽離 .md(CLI 化模式)
+
+對某些 command,90%+ 的工作都是固定邏輯,只有 1~2 個步驟真正需要 LLM 能力。例如 `/spec:new` 只需要 LLM 把中文輸入翻成英文 slug + 推導中文標題,其他從 CWD 校正到寫 issue.md 全是程式邏輯。讓 Claude 跑這些固定 step 是**浪費**——既慢(每個 Bash 工具呼叫 round-trip 含 model 推理 ~2~5 秒)又容易出錯(LLM 解析、組裝、再執行,中間環節都可能漏字或多字)。
+
+**對策**:把整支固定邏輯抽進獨立 Node CLI 腳本。.md 變薄:
+
+| 層 | 內容 | 角色 |
+|---|---|---|
+| `commands/spec/<name>.md`(~100~250 行) | 翻譯規則 + 呼叫 CLI + verdict dispatch + LLM 工作指引 + echo 訊息模板 | 給 Claude:做 LLM 必要的事、解析 JSON、選對應動作 |
+| `scripts/<name>.mjs`(~80~240 行) | CWD 校正、frontmatter 解析、閘門檢查、檔案讀取、git 子命令、(部分腳本)寫檔/開分支/merge | 純程式,可單獨測試 |
+| `scripts/lib.mjs`(~130 行) | 跨腳本共用 utility:parseArgs、emit、halt、tryGit、relocateToProjectRoot、readProjectMetadata、probeGitState、listSpecChanges、resolveTaskName、readSpecChangeFile | 所有 .mjs `import` 用 |
+
+**為什麼選 Node 而不是 bash**:
+- `specflow-npm` 本身就是 Node 套件,`npx init` 那刻就保證有 Node ≥ 18 —— **零新依賴**
+- `execFileSync('git', [...])` 是**陣列傳參**,中文標題 / 含空格 slug / 特殊字元都安全,**不會被 shell 解析**(bash 的 quoting 地雷消失)
+- 跨平台行為一致(bash 在 macOS BSD vs Linux GNU 的 sed/awk 行為不同)
+- JSON 用 `JSON.stringify` 內建,跳脫一致
+- 可重用 `src/utils/` 的既有 utility,長遠維護性好
+
+**雙層 CWD 校正設計**:`.mjs` 內部會自己 `process.chdir(toplevel)`,但**子進程的 chdir 不影響父 shell**;所以 .md 的呼叫端也要在外面寫一次 `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/.../X.mjs`。兩層作用域不同:
+
+- 外層 cd 改 Bash 工具父 shell 的 CWD —— 讓 `node` 找得到腳本檔本身
+- 內層 chdir 改 .mjs 子進程的 CWD —— 讓腳本內部讀 `specflow/project.md` 等檔案
+
+兩層獨立但同向。外層失敗(例如不在 git repo)→ 腳本啟動不了,Claude 端的 ENOENT 範本接手提示使用者切換到專案根。
+
+**Verdict 協議**(`.md` ↔ `.mjs` 之間的契約):
+
+.mjs 永遠 `exit 0`,stdout 輸出**單一 JSON 物件**(pretty-printed,2 空格縮排,方便 debug)。常見 verdict 形態:
+
+- **二態**(new、design):`success`(含後續欄位) / `halt`(`haltReason` + `haltMessage`)
+- **多態 dispatch**(run):`halt` / `needs_decision_checkbox` / `discussion_mode` / `ready_to_execute` —— .md 依 verdict 分流走不同流程
+- **兩階段**(close):第一次無 `--summary` → `needs_summary` + issue/task 內容讓 LLM 產 summary;第二次帶 `--summary` → `success` + `actions` 陣列(已執行的 git 動作)
+
+通用規則:
+
+- 永遠 `exit 0`(錯誤狀態用 verdict 表達,不靠 exit code)
+- `haltMessage` 是 Claude **原樣 echo 給使用者**的完整訊息(訊息已含具體指引,Claude 不要再加解釋或建議)
+- `success` 路徑的欄位給 Claude 拼成功訊息用(訊息模板寫在 .md 的對應 Step)
+- 為什麼選 JSON 而非 KEY=VALUE:Node 端 `JSON.stringify` 一行搞定;Claude 解析準確度高;型別嚴謹(bool 是 bool、null 是 null);未來加巢狀欄位免重新設計格式
+
+**兩種 CLI 化形態**:
+
+| 形態 | 用於 | .mjs 的職責 |
+|---|---|---|
+| **全包式** | `/spec:new`、`/spec:close --summary` | 含實際動作(寫檔、開分支、commit、merge);LLM 工作壓成 CLI 參數一次傳完 |
+| **Preflight 式** | `/spec:design`、`/spec:run`、`/spec:close`(不帶 summary 那次) | 只做檢查 + 讀檔,輸出含 `issueContent` / `designContent` / `taskMdContent` / `projectMdContent` 等完整內容;LLM 拿到 JSON 後產內容,寫檔交 Write/Edit 工具 |
+
+**判斷哪種形態**:LLM 工作能不能壓成 1~2 個 CLI 參數?
+
+- ✅ 壓得進(translation、summary)→ **全包式**,.mjs 內含動作
+- ❌ 壓不進(產整份 design.md、產 task.md + 逐項實作)→ **Preflight 式**,.mjs 只給 LLM 「桌面工具包」(完整檔案內容 + 閘門狀態),LLM 用 Write/Edit 寫回
+
+**反快取問題的根本解**:.mjs 用 Node 的 `fs.readFileSync` 直接讀檔,**沒有 Claude Code 工具層的快取**,內容永遠是磁碟最新版。這讓 §2.2「反快取原則」對 design/run/close 路徑根本不適用(只剩 `/spec:run` 流程 A 內 task.md 仍要用 Read,因為要透過 Edit 勾 checkbox)。
 
 ### 3. 狀態機優於流程控制
 
