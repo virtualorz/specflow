@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { copyDirRecursive } from '../utils/copy.js';
+import { setupClaudeSettings } from '../utils/settings.js';
 
 export async function runUpdate({ packageRoot }) {
   const cwd = process.cwd();
@@ -99,7 +100,10 @@ export async function runUpdate({ packageRoot }) {
   // ── Step 5: 更新版本標記 ──────────────────
   await writeFile(versionFile, newVersion + '\n', 'utf-8');
 
-  // ── Step 6: 完成提示 ──────────────────
+  // ── Step 6: 詢問是否寫入 / 更新 settings.local.json ──
+  await setupClaudeSettings({ cwd });
+
+  // ── Step 7: 完成提示 ──────────────────
   console.log(`
 ✅ specflow 已升級至 v${newVersion}
 

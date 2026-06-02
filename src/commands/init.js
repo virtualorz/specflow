@@ -14,6 +14,7 @@ import { existsSync } from 'node:fs';
 import { writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { copyDirRecursive } from '../utils/copy.js';
+import { setupClaudeSettings } from '../utils/settings.js';
 
 export async function runInit({ packageRoot }) {
   const cwd = process.cwd();
@@ -53,7 +54,10 @@ export async function runInit({ packageRoot }) {
   const versionFile = join(targetClaude, 'skills', 'specflow', '.specflow-version');
   await writeFile(versionFile, pkgJson.version + '\n', 'utf-8');
 
-  // ── Step 5: 顯示後續步驟 ──────────────────
+  // ── Step 5: 詢問是否自動寫入 settings.local.json ──
+  await setupClaudeSettings({ cwd });
+
+  // ── Step 6: 顯示後續步驟 ──────────────────
   console.log(`
 ✅ specflow 已安裝完成 (v${pkgJson.version})
 
