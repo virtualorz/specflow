@@ -34,7 +34,7 @@ allowed-tools: Bash(node:*), Bash(git rev-parse:*), Bash(cd:*)
 **使用 Bash 工具**執行(把 `<slug>` 與 `<title>` 換成 Step 1 推導的值):
 
 ```
-cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/new.mjs --slug "<slug>" --title "<title>"
+node .claude/skills/specflow/scripts/new.mjs --slug "<slug>" --title "<title>"
 ```
 
 輸出是**單一 JSON 物件**到 stdout(pretty-printed,2 空格縮排)。兩種 verdict:

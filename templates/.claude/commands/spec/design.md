@@ -15,7 +15,7 @@ allowed-tools: Read, Write, Bash(node:*), Bash(git rev-parse:*), Bash(cd:*)
 **使用 Bash 工具**執行(把 `<task>` 換成 `$ARGUMENTS` 原值,支援數字簡寫 `2` / `0002` / 完整 task name):
 
 ```
-cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/design.mjs --task "<task>"
+node .claude/skills/specflow/scripts/design.mjs --task "<task>"
 ```
 
 輸出是**單一 JSON 物件**到 stdout。兩種 verdict:

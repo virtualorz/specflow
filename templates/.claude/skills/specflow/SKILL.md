@@ -131,12 +131,25 @@ slash command 裡用 ``!`cmd` `` 反引號語法寫的 bash,會在 **Claude Code
 - JSON 用 `JSON.stringify` 內建,跳脫一致
 - 可重用 `src/utils/` 的既有 utility,長遠維護性好
 
-**雙層 CWD 校正設計**:`.mjs` 內部會自己 `process.chdir(toplevel)`,但**子進程的 chdir 不影響父 shell**;所以 .md 的呼叫端也要在外面寫一次 `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/.../X.mjs`。兩層作用域不同:
+**CWD 校正(從 v0.5.0-rc.4 起改成單層)**:`.mjs` 內部用 `process.chdir(toplevel)` 校正自己的 CWD(讓它能讀 `specflow/project.md` 等檔案)。**沒有外層 cd**,所以 Claude Code 的 Bash 工具 CWD 必須**已經在專案根**(=使用者啟動 session 的目錄),否則 `node` 連 `.claude/skills/specflow/scripts/X.mjs` 路徑本身都找不到 → ENOENT → .md 內的 ENOENT 範本接手提示使用者重啟 session。
 
-- 外層 cd 改 Bash 工具父 shell 的 CWD —— 讓 `node` 找得到腳本檔本身
-- 內層 chdir 改 .mjs 子進程的 CWD —— 讓腳本內部讀 `specflow/project.md` 等檔案
+為什麼移除外層 cd:**Claude Code 對含 shell syntax 的命令無法靜態分析,`Bash(node:*)` allow 無法生效**。原本的形式:
 
-兩層獨立但同向。外層失敗(例如不在 git repo)→ 腳本啟動不了,Claude 端的 ENOENT 範本接手提示使用者切換到專案根。
+```
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/.../X.mjs ...
+```
+
+含 `$()` 命令替換、`&&` 邏輯運算、`2>/dev/null` redirect —— 全是 shell syntax,Claude Code 視為「string that cannot be statically analyzed」,**不論 allow 怎麼設都會強制 prompt**。
+
+純粹形式:
+
+```
+node .claude/skills/specflow/scripts/X.mjs --slug "X" --title "Y"
+```
+
+只有命令 + 路徑 + 參數,無 shell syntax,Claude Code 可以靜態分析,`Bash(node:*)` allow 才會真的生效。雙引號內的字串字面值(包括中文)不算 shell syntax。
+
+Trade-off:CWD 沒被自動校正 → session 不在專案根時直接 ENOENT,而不是「靜默 cd 過去再執行」。對絕大多數使用情境成立(在 repo 根開 Claude Code),少數情境(monorepo 子目錄啟動)由 ENOENT 範本明確要求使用者 cd 後重啟 session。
 
 **Verdict 協議**(`.md` ↔ `.mjs` 之間的契約):
 

@@ -18,11 +18,11 @@ allowed-tools: Bash(node:*), Bash(git rev-parse:*), Bash(cd:*)
 
 - **enabled 模式**(從當前分支推 spec_branch):
   ```
-  cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/close.mjs
+  node .claude/skills/specflow/scripts/close.mjs
   ```
 - **disabled 模式**(從 `$ARGUMENTS` 帶 task):
   ```
-  cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/close.mjs --task "<$ARGUMENTS>"
+  node .claude/skills/specflow/scripts/close.mjs --task "<$ARGUMENTS>"
   ```
 
 ⚠️ 不知道 git_flow 是哪個?先跑 **disabled 版本(帶 `--task`)**;若 `$ARGUMENTS` 為空,跑 enabled 版本。close.mjs 內部會檢查 git_flow 設定,該 halt 會 halt。
@@ -76,11 +76,11 @@ echo `haltMessage`,**停止**。不要重試。
 
 - **enabled 模式**:
   ```
-  cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/close.mjs --summary "<summary>"
+  node .claude/skills/specflow/scripts/close.mjs --summary "<summary>"
   ```
 - **disabled 模式**:
   ```
-  cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/close.mjs --task "<task>" --summary "<summary>"
+  node .claude/skills/specflow/scripts/close.mjs --task "<task>" --summary "<summary>"
   ```
 
 可能的 verdict:

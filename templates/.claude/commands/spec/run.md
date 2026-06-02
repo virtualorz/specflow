@@ -15,7 +15,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 **使用 Bash 工具**執行(把 `<task>` 換成 `$ARGUMENTS` 原值):
 
 ```
-cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node .claude/skills/specflow/scripts/run.mjs --task "<task>"
+node .claude/skills/specflow/scripts/run.mjs --task "<task>"
 ```
 
 輸出是單一 JSON 物件。四種 verdict:
