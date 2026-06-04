@@ -12,7 +12,7 @@
 
 import { existsSync } from 'node:fs';
 import {
-  parseArgs, emit, halt,
+  parseArgs, emit, halt, nowISO,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
   listSpecChanges, resolveTaskName, readSpecChangeFile,
 } from './lib.mjs';
@@ -78,4 +78,5 @@ emit({
   projectMdContent,
   designAlreadyExists,
   branchWarning,
+  now: nowISO(),
 });

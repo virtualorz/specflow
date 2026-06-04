@@ -16,9 +16,9 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
-  parseArgs, emit, halt, tryGit,
+  parseArgs, emit, halt, nowISO, tryGit,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
-  listSpecChanges, resolveTaskName, readSpecChangeFile,
+  listSpecChanges, resolveTaskName, readSpecChangeFile, writeSpecChangeFile,
 } from './lib.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -160,7 +160,28 @@ if (!args.summary) {
   });
 }
 
+// ── helper:把 closed_at timestamp 寫進 task.md frontmatter ──
+//
+// 順序:
+// 1. 已有 closed_at 行(不論 null 或舊值)→ 直接 replace
+// 2. 有 frontmatter 但沒 closed_at → 在 frontmatter 結尾 `---` 前 append
+// 3. 沒有 frontmatter(0.5.0 之前的舊 spec change)→ 在最開頭加一個 frontmatter
+function writeClosedAt(content, isoTimestamp) {
+  const closedAtLine = `closed_at: ${isoTimestamp}`;
+  if (/^closed_at:.*$/m.test(content)) {
+    return content.replace(/^closed_at:.*$/m, closedAtLine);
+  }
+  if (/^---\r?\n[\s\S]*?\r?\n---/.test(content)) {
+    return content.replace(/^(---\r?\n[\s\S]*?\r?\n)---/, `$1${closedAtLine}\n---`);
+  }
+  return `---\n${closedAtLine}\n---\n\n${content}`;
+}
+
 // === 8. 帶 --summary:執行 finalize 動作 ===
+
+// 8.0 寫 closed_at 到 task.md(不論 enabled / disabled)
+const closedAt = nowISO();
+writeSpecChangeFile(specBranch, 'task.md', writeClosedAt(taskMdContent, closedAt));
 
 // 8a. disabled 模式:不動 git,直接回成功
 if (gitFlow === 'disabled') {
@@ -170,7 +191,11 @@ if (gitFlow === 'disabled') {
     gitFlow: 'disabled',
     baseBranch: null,
     summary: args.summary,
-    actions: ['(disabled 模式,沒有執行任何 git 操作)'],
+    closedAt,
+    actions: [
+      `已將 closed_at: ${closedAt} 寫入 task.md frontmatter`,
+      '(disabled 模式,沒有執行任何 git 操作)',
+    ],
     nextStepHint:
       '在 disabled 模式下,請自行處理 git 流程,例如:\n' +
       '```bash\n' +
@@ -181,7 +206,7 @@ if (gitFlow === 'disabled') {
 }
 
 // 8b. enabled 模式:commit + checkout + merge
-const actions = [];
+const actions = [`已將 closed_at: ${closedAt} 寫入 task.md frontmatter`];
 
 // (i) 若 working tree 有變更,先 commit
 const porcelain = tryGit(['status', '--porcelain']);
@@ -229,6 +254,7 @@ emit({
   gitFlow: 'enabled',
   baseBranch,
   summary: args.summary,
+  closedAt,
   actions,
   nextStepHint:
     '後續動作(由你決定,/spec:close 不會自動做):\n' +

@@ -1,3 +1,8 @@
+---
+created_at: <CREATED_AT>
+closed_at: null
+---
+
 # Task: <task-name>
 
 > 此檔案由 Claude 產出,並在執行 `/spec:run` 時逐項勾選。

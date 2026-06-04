@@ -11,7 +11,7 @@
 
 import { statSync } from 'node:fs';
 import {
-  parseArgs, emit, halt,
+  parseArgs, emit, halt, nowISO,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
   listSpecChanges, resolveTaskName, readSpecChangeFile,
 } from './lib.mjs';
@@ -134,4 +134,5 @@ emit({
   taskMdPendingCount,
   designNewerThanTask,
   uncheckedDecisionCount,
+  now: nowISO(),
 });

@@ -161,6 +161,7 @@ echo `haltMessage` 內容,**停止**。不要重試、不要嘗試自行解決�
 
 依 `.claude/skills/specflow/templates/task.md` 格式產出。根據 JSON 給的 `issueContent` + `designContent` + `projectMdContent` 拆任務:
 
+- **frontmatter**:`created_at: <CREATED_AT>` 中的 `<CREATED_AT>` 替換成 JSON 給的 `now` 欄位值;`closed_at: null` 保持原樣(由 /spec:close 寫入)
 - 每項任務是一個 checkbox,顆粒度為 **5 分鐘內**可完成
 - 每項任務包含「**檔案路徑** + **改動內容**」兩個子項
 - 涉及新 Service 時,任務必須包含三步驟(依 projectMdContent §3):

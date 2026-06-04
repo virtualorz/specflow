@@ -12,7 +12,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import {
-  parseArgs, emit, halt, todayISO, tryGit,
+  parseArgs, emit, halt, nowISO, tryGit,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
   listSpecChanges,
 } from './lib.mjs';
@@ -109,7 +109,7 @@ const template = readFileSync(templatePath, 'utf8');
 // === 8. 三處占位符替換 ===
 const content = template
   .replace('<BASE_BRANCH>', baseBranch ?? 'null')
-  .replace('<CREATED_AT>', todayISO())
+  .replace('<CREATED_AT>', nowISO())
   .replace(/^# Issue: .*/m, `# Issue: ${args.title} (${taskName})`);
 
 // === 9. 寫入 issue.md ===

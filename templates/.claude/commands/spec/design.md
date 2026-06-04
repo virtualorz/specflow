@@ -88,6 +88,7 @@ echo `branchWarning` 內容給使用者作為警告,但**直接繼續往下,不�
 
 **強制要求**:
 
+- **frontmatter**:把 template 開頭的 `created_at: <CREATED_AT>` 中的 `<CREATED_AT>` 替換成 JSON 給的 `now` 欄位值
 - 「決策清單」用 checkbox,每項包含**標題、決策內容、理由、替代方案**
 - 「影響範圍」明確列出直接改動 / 間接影響 / 不影響但需注意
 - 「實作細節」**不寫程式碼**(那是 task.md 的職責),只描述「要怎麼做」

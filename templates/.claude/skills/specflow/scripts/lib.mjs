@@ -7,7 +7,7 @@
 // 業務邏輯(硬閘門組合、訊息文案、產 design/task 規範)仍在各支 .mjs 內。
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 
 // ── CLI / 系統 ──────────────────────────────────────
 
@@ -35,6 +35,26 @@ export function halt(reason, message) {
 
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// ISO 8601 timestamp 含本地時區 offset(例:"2026-06-04T17:32:15+08:00")
+// 比 UTC(結尾 Z)更人類友善,看一眼就知道大概什麼時候做的;
+// 含 offset 後仍是無歧義的時間戳,程式解析也沒問題。
+export function nowISO() {
+  const d = new Date();
+  const pad = n => String(Math.abs(n)).padStart(2, '0');
+  const offsetMin = -d.getTimezoneOffset(); // JS 是「本地比 UTC 慢幾分鐘」反過來
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const hh = pad(Math.floor(Math.abs(offsetMin) / 60));
+  const mm = pad(Math.abs(offsetMin) % 60);
+  // 用本地時間構造 YYYY-MM-DDTHH:mm:ss
+  const yyyy = d.getFullYear();
+  const MM = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const HH = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+  return `${yyyy}-${MM}-${dd}T${HH}:${mi}:${ss}${sign}${hh}:${mm}`;
 }
 
 export function tryGit(gitArgs) {
@@ -125,4 +145,11 @@ export function readSpecChangeFile(taskName, file) {
   const path = `specflow/changes/${taskName}/${file}`;
   if (!existsSync(path)) return null;
   return readFileSync(path, 'utf8');
+}
+
+// 寫回某個 spec change 內的指定檔案
+// 給 close.mjs 用於把 closed_at 寫進 task.md
+export function writeSpecChangeFile(taskName, file, content) {
+  const path = `specflow/changes/${taskName}/${file}`;
+  writeFileSync(path, content, 'utf8');
 }

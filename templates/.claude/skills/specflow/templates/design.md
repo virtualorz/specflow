@@ -1,3 +1,7 @@
+---
+created_at: <CREATED_AT>
+---
+
 # Design: <task-name>
 
 ## 決策清單
