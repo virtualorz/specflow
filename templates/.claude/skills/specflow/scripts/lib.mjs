@@ -189,7 +189,9 @@ export function updateFrontmatterField(content, key, value) {
 // 回傳 { total, sessionId } 或 null(找不到 transcript / 解析失敗)。
 //
 // 機制:
-// - encoded cwd = process.cwd() 把 "/" 換成 "-" (例:/workspace/foo → -workspace-foo)
+// - encoded cwd 規則:把所有「非字母/數字/dash」的字元都換成 "-"(Claude Code 的編碼
+//   觀察:`/`、`_`、`.` 等都換成 `-`,字母大小寫保留;例:/workspace/laravel/js_crm
+//   → -workspace-laravel-js-crm)
 // - transcript 目錄 = ~/.claude/projects/<encoded cwd>/
 // - 選最新修改的 .jsonl 作為「當前 session」(specflow 跑時的 session 一定是最新被寫的)
 // - 逐行 JSON.parse,累加 message.usage 的 input_tokens + output_tokens
@@ -197,7 +199,7 @@ export function updateFrontmatterField(content, key, value) {
 // 注意:transcript 寫入 disk 有 buffer lag,最近一兩個 message 可能還沒落地,
 // 所以這個數字會有誤差,但對「差值法估算 spec 消耗」夠用。
 export function getCurrentSessionTokens() {
-  const encoded = process.cwd().replace(/\//g, '-');
+  const encoded = process.cwd().replace(/[^a-zA-Z0-9-]/g, '-');
   const dir = join(homedir(), '.claude', 'projects', encoded);
   if (!existsSync(dir)) return null;
 
