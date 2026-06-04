@@ -143,15 +143,22 @@ your-project/
 │   ├── skills/specflow/
 │   │   ├── SKILL.md
 │   │   ├── .specflow-version       (記錄安裝版本,給 update 用)
-│   │   └── templates/
-│   │       ├── issue.md
-│   │       ├── design.md
-│   │       └── task.md
-│   └── commands/spec/
-│       ├── new.md
-│       ├── design.md
-│       ├── run.md
-│       └── close.md
+│   │   ├── templates/              (issue/design/task 的格式範本)
+│   │   │   ├── issue.md
+│   │   │   ├── design.md
+│   │   │   └── task.md
+│   │   └── scripts/                (CLI 腳本,被 slash command 呼叫,v0.5+ 新增)
+│   │       ├── lib.mjs
+│   │       ├── new.mjs
+│   │       ├── design.mjs
+│   │       ├── run.mjs
+│   │       └── close.mjs
+│   ├── commands/spec/              (四個 slash command)
+│   │   ├── new.md
+│   │   ├── design.md
+│   │   ├── run.md
+│   │   └── close.md
+│   └── settings.local.json         (Bash allow list,init 時可選自動寫入,不會 commit)
 └── specflow/
     ├── project.md                  ← 編輯這份(最上方 frontmatter 是 specflow 設定)
     └── changes/
@@ -219,6 +226,34 @@ git_flow: disabled
 - ✅ 中文/自由文字:`/spec:new 重構 campaign proxy` —— Claude 翻譯成英文 slug
 - ✅ 英文 slug(`^[a-z]+(-[a-z]+)*$`):`/spec:new refactor-campaign-proxy` —— 直接使用
 
+## Spec 軌跡 metadata(v0.5+)
+
+跑完一個 spec change 後,`issue.md` / `task.md` 的 frontmatter 會留下時間、作者、token 消耗的軌跡:
+
+```yaml
+# issue.md frontmatter
+---
+base_branch: dev
+created_at: 2026-06-04T17:32:15+08:00     # /spec:new 的時間(ISO 8601 含時區)
+created_by: "Alice Chen"                  # git config user.name
+tokens_at_new: 12345                      # /spec:new 時 session 累計 token
+session_id_at_new: 7f3e4d2a-...
+tokens_at_close: 67890                    # /spec:close 時的累計
+session_id_at_close: 7f3e4d2a-...
+tokens_used: 55545                        # 差值(同 session 才有);跨 session 為 null + tokens_note
+---
+```
+
+```yaml
+# task.md frontmatter
+---
+created_at: 2026-06-04T17:45:22+08:00     # /spec:run 產 task.md 的時間
+closed_at: 2026-06-04T18:42:11+08:00      # /spec:close 寫入
+---
+```
+
+所有 metadata 欄位都是 **best-effort**:取不到值(沒裝 git、不在 session 內、跨容器找不到 transcript 等)就靜默跳過,不會 halt slash command。specflow 本身不主動消費這些欄位,僅作為人類可讀的時間/作者/成本軌跡。
+
 ## 升級
 
 當 specflow 推出新版時,在已安裝的專案執行:
@@ -232,6 +267,7 @@ npx @virtualorz/specflow update
 - ✅ 覆蓋 `.claude/skills/specflow/` 跟 `.claude/commands/spec/`(specflow 工具本體)
 - 🛡️ **不動** `specflow/project.md`(你的專案規範)
 - 🛡️ **不動** `specflow/changes/`(你的工作軌跡)
+- 🔐 詢問是否寫入 `.claude/settings.local.json` 的 Bash allow list(v0.5+,讓 Claude 跑 `/spec:*` 時不再每次提示權限;只有你輸入 `y` 才會寫,且該檔自動進 `.gitignore`)
 
 執行前會列出將被覆蓋的範圍並詢問確認。完成後建議用 `git diff .claude/` 審查變更,確認沒問題再 commit。
 
@@ -239,14 +275,18 @@ npx @virtualorz/specflow update
 
 - **用結構強迫思考品質,但保留最小化形式給小改動** —— 30 行的小改動,design.md 可以只有 3 條決策
 - **每個階段都有 checkpoint** —— specflow 的價值在於每階段的人工審查,不是自動化
-- **不要相信 Claude 的記憶** —— slash command 用 `cat` 而非 Read 工具讀檔,避開 Claude Code 的檔案快取
+- **不要相信 Claude 的記憶** —— slash command 內部用 Node CLI 腳本(`.mjs`)用 `fs.readFileSync` 直接讀檔,避開 Claude Code 的檔案快取
 - **狀態機優於流程控制** —— `/spec:run` 由「閘門條件」(決策全勾 + 待討論清空)決定要進入「處理討論」、「提示勾選」還是「產 task.md → 執行」,而非由 Claude「記得該做什麼」
+- **固定邏輯走 CLI,LLM 工作留在 .md**(v0.5+) —— 四個 slash command 把固定邏輯(CWD 校正、frontmatter 解析、閘門檢查、git 操作)抽到 `.mjs` 腳本,Claude 只負責真正需要 LLM 的部分(slug 翻譯、產 design.md 內容、討論回應、產 task.md + 逐項實作、產 summary)
 
 ## 相容性
 
 - 需要 [Claude Code](https://docs.claude.com/en/docs/claude-code)
-- 跟任何專案類型都相容(Laravel、React、Node.js、Python 等) —— specflow 本身只是一堆 Markdown
-- 執行 `init` / `update` 需要 Node.js 18+(只有安裝步驟需要,specflow 跑流程時不需要 Node)
+- 跟任何專案類型都相容(Laravel、React、Node.js、Python 等) —— specflow 本身是 Markdown + Node CLI
+- 需要 **Node.js 18+**(`init` / `update` 跟 slash command 內部腳本都用到)
+- 跑在 **Docker / devcontainer** 內的注意事項:
+  - 容器內可能沒裝 `tzdata` → `created_at` / `closed_at` 顯示為 UTC(`+00:00`)。要本地時區可在容器內裝 `tzdata`(`apt-get install tzdata`)並設 `TZ=Asia/Taipei`
+  - 如果 **Claude Code 跟你的開發環境跑在不同容器**:`tokens_at_new` / `tokens_used` 等差值欄位可能寫不進去(因為 specflow 在開發容器跑、transcript 在 Claude 容器寫,跨容器讀不到)。其他欄位不受影響
 
 ## License
 
