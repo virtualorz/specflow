@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import {
   parseArgs, emit, halt, nowISO, tryGit,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
-  listSpecChanges, updateFrontmatterField, getCurrentSessionTokens,
+  listSpecChanges, updateFrontmatterField, getCurrentSessionTokens, getGitUserName,
 } from './lib.mjs';
 
 // ── 主流程 ─────────────────────────────────────────
@@ -118,6 +118,13 @@ const issuePath = `${dir}/issue.md`;
 mkdirSync(dir, { recursive: true });
 
 let finalContent = content;
+
+// git user.name(永遠 quote 以避免空格/中文/特殊字元打壞 YAML;含雙引號或換行的極罕見情境則靜默跳過)
+const gitUserName = getGitUserName();
+if (gitUserName && !gitUserName.includes('"') && !gitUserName.includes('\n')) {
+  finalContent = updateFrontmatterField(finalContent, 'created_by', `"${gitUserName}"`);
+}
+
 const tokensSnapshot = getCurrentSessionTokens();
 if (tokensSnapshot) {
   finalContent = updateFrontmatterField(finalContent, 'tokens_at_new', String(tokensSnapshot.total));

@@ -98,6 +98,12 @@ export function readProjectMetadata() {
   return { gitFlow, baseBranches, content };
 }
 
+// 取 git user.name(local 或 global 都行)
+// 回字串 | null(沒設或 git 不可用)
+export function getGitUserName() {
+  return tryGit(['config', 'user.name']);
+}
+
 // ── git 狀態 ───────────────────────────────────────
 
 // 回傳 { inGitRepo, hasInitialCommit, currentBranch }
