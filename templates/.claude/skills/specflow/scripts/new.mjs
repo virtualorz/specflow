@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import {
   parseArgs, emit, halt, nowISO, tryGit,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
-  listSpecChanges,
+  listSpecChanges, updateFrontmatterField, getCurrentSessionTokens,
 } from './lib.mjs';
 
 // ── 主流程 ─────────────────────────────────────────
@@ -112,11 +112,18 @@ const content = template
   .replace('<CREATED_AT>', nowISO())
   .replace(/^# Issue: .*/m, `# Issue: ${args.title} (${taskName})`);
 
-// === 9. 寫入 issue.md ===
+// === 9. 寫入 issue.md (含 token 基準值,給 close 時算差值用) ===
 const dir       = `specflow/changes/${taskName}`;
 const issuePath = `${dir}/issue.md`;
 mkdirSync(dir, { recursive: true });
-writeFileSync(issuePath, content, 'utf8');
+
+let finalContent = content;
+const tokensSnapshot = getCurrentSessionTokens();
+if (tokensSnapshot) {
+  finalContent = updateFrontmatterField(finalContent, 'tokens_at_new', String(tokensSnapshot.total));
+  finalContent = updateFrontmatterField(finalContent, 'session_id_at_new', tokensSnapshot.sessionId);
+}
+writeFileSync(issuePath, finalContent, 'utf8');
 
 // === 10. 成功 verdict ===
 emit({

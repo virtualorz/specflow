@@ -7,7 +7,9 @@
 // 業務邏輯(硬閘門組合、訊息文案、產 design/task 規範)仍在各支 .mjs 內。
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 // ── CLI / 系統 ──────────────────────────────────────
 
@@ -152,4 +154,80 @@ export function readSpecChangeFile(taskName, file) {
 export function writeSpecChangeFile(taskName, file, content) {
   const path = `specflow/changes/${taskName}/${file}`;
   writeFileSync(path, content, 'utf8');
+}
+
+// ── Frontmatter 編輯 ──────────────────────────────
+
+// 更新或 append frontmatter 內的某個 key。
+// 三層 fallback:
+// 1. 已有該 key → replace 整行
+// 2. 有 frontmatter 但無該 key → 在結尾 `---` 之前 append
+// 3. 沒有 frontmatter → 在最開頭新增一個 frontmatter
+//
+// value 直接以字串形式拼進去,呼叫端負責 quote(例如含特殊字元的字串應自己加雙引號)。
+export function updateFrontmatterField(content, key, value) {
+  const line = `${key}: ${value}`;
+  const keyRegex = new RegExp(`^${key}:.*$`, 'm');
+  if (keyRegex.test(content)) {
+    return content.replace(keyRegex, line);
+  }
+  if (/^---\r?\n[\s\S]*?\r?\n---/.test(content)) {
+    return content.replace(/^(---\r?\n[\s\S]*?\r?\n)---/, `$1${line}\n---`);
+  }
+  return `---\n${line}\n---\n\n${content}`;
+}
+
+// ── Claude Code session token 探測 ────────────────
+
+// 從當前 Claude Code session 的 transcript .jsonl 算累計 token。
+// 回傳 { total, sessionId } 或 null(找不到 transcript / 解析失敗)。
+//
+// 機制:
+// - encoded cwd = process.cwd() 把 "/" 換成 "-" (例:/workspace/foo → -workspace-foo)
+// - transcript 目錄 = ~/.claude/projects/<encoded cwd>/
+// - 選最新修改的 .jsonl 作為「當前 session」(specflow 跑時的 session 一定是最新被寫的)
+// - 逐行 JSON.parse,累加 message.usage 的 input_tokens + output_tokens
+//
+// 注意:transcript 寫入 disk 有 buffer lag,最近一兩個 message 可能還沒落地,
+// 所以這個數字會有誤差,但對「差值法估算 spec 消耗」夠用。
+export function getCurrentSessionTokens() {
+  const encoded = process.cwd().replace(/\//g, '-');
+  const dir = join(homedir(), '.claude', 'projects', encoded);
+  if (!existsSync(dir)) return null;
+
+  // 找最新修改的 .jsonl
+  let latestName = null;
+  let latestMtime = 0;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.jsonl')) continue;
+    try {
+      const mtime = statSync(join(dir, name)).mtimeMs;
+      if (mtime > latestMtime) {
+        latestMtime = mtime;
+        latestName = name;
+      }
+    } catch { /* skip */ }
+  }
+  if (!latestName) return null;
+
+  const transcriptPath = join(dir, latestName);
+  let total = 0;
+  try {
+    const text = readFileSync(transcriptPath, 'utf8');
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const msg = JSON.parse(line);
+        // Claude Code 的 transcript 把 usage 放在 message.usage(assistant message)
+        const usage = msg.message?.usage;
+        if (usage) {
+          total += (usage.input_tokens || 0) + (usage.output_tokens || 0);
+        }
+      } catch { /* skip malformed line */ }
+    }
+  } catch {
+    return null;
+  }
+
+  return { total, sessionId: latestName.replace(/\.jsonl$/, '') };
 }

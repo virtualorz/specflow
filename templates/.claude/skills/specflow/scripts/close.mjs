@@ -19,6 +19,7 @@ import {
   parseArgs, emit, halt, nowISO, tryGit,
   relocateToProjectRoot, readProjectMetadata, probeGitState,
   listSpecChanges, resolveTaskName, readSpecChangeFile, writeSpecChangeFile,
+  updateFrontmatterField, getCurrentSessionTokens,
 } from './lib.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -160,28 +161,44 @@ if (!args.summary) {
   });
 }
 
-// ── helper:把 closed_at timestamp 寫進 task.md frontmatter ──
-//
-// 順序:
-// 1. 已有 closed_at 行(不論 null 或舊值)→ 直接 replace
-// 2. 有 frontmatter 但沒 closed_at → 在 frontmatter 結尾 `---` 前 append
-// 3. 沒有 frontmatter(0.5.0 之前的舊 spec change)→ 在最開頭加一個 frontmatter
-function writeClosedAt(content, isoTimestamp) {
-  const closedAtLine = `closed_at: ${isoTimestamp}`;
-  if (/^closed_at:.*$/m.test(content)) {
-    return content.replace(/^closed_at:.*$/m, closedAtLine);
-  }
-  if (/^---\r?\n[\s\S]*?\r?\n---/.test(content)) {
-    return content.replace(/^(---\r?\n[\s\S]*?\r?\n)---/, `$1${closedAtLine}\n---`);
-  }
-  return `---\n${closedAtLine}\n---\n\n${content}`;
-}
-
 // === 8. 帶 --summary:執行 finalize 動作 ===
 
-// 8.0 寫 closed_at 到 task.md(不論 enabled / disabled)
+// 8.0 寫 closed_at 到 task.md(不論 enabled / disabled);
+//     用 updateFrontmatterField 的三層 fallback 處理舊版 spec change(0.5.0 前沒 frontmatter)
 const closedAt = nowISO();
-writeSpecChangeFile(specBranch, 'task.md', writeClosedAt(taskMdContent, closedAt));
+writeSpecChangeFile(specBranch, 'task.md', updateFrontmatterField(taskMdContent, 'closed_at', closedAt));
+
+// 8.0b 算 token 差值寫到 issue.md(只在能拿到 token snapshot 時做,失敗就靜默跳過)
+let tokensUsed = null;
+let tokensNote = null;
+const tokensAtClose = getCurrentSessionTokens();
+if (tokensAtClose) {
+  // 從 issue.md frontmatter 取 baseline
+  const issueFmMatch = issueContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const issueFm = issueFmMatch ? issueFmMatch[1] : '';
+  const baselineRaw = issueFm.match(/^tokens_at_new:\s*(\d+)/m)?.[1];
+  const baselineSession = issueFm.match(/^session_id_at_new:\s*(\S+)/m)?.[1];
+
+  const sameSession = baselineSession && baselineSession === tokensAtClose.sessionId;
+
+  let updatedIssue = issueContent;
+  updatedIssue = updateFrontmatterField(updatedIssue, 'tokens_at_close', String(tokensAtClose.total));
+  updatedIssue = updateFrontmatterField(updatedIssue, 'session_id_at_close', tokensAtClose.sessionId);
+
+  if (sameSession && baselineRaw) {
+    tokensUsed = tokensAtClose.total - parseInt(baselineRaw, 10);
+    updatedIssue = updateFrontmatterField(updatedIssue, 'tokens_used', String(tokensUsed));
+  } else {
+    tokensUsed = null;
+    tokensNote = baselineSession
+      ? '跨 session,無法用差值法計算(/spec:new 跟 /spec:close 不在同一個 Claude Code session)'
+      : '/spec:new 時未記錄 baseline,無法計算';
+    updatedIssue = updateFrontmatterField(updatedIssue, 'tokens_used', 'null');
+    updatedIssue = updateFrontmatterField(updatedIssue, 'tokens_note', `"${tokensNote}"`);
+  }
+
+  writeSpecChangeFile(specBranch, 'issue.md', updatedIssue);
+}
 
 // 8a. disabled 模式:不動 git,直接回成功
 if (gitFlow === 'disabled') {
@@ -192,6 +209,8 @@ if (gitFlow === 'disabled') {
     baseBranch: null,
     summary: args.summary,
     closedAt,
+    tokensUsed,
+    tokensNote,
     actions: [
       `已將 closed_at: ${closedAt} 寫入 task.md frontmatter`,
       '(disabled 模式,沒有執行任何 git 操作)',
@@ -255,6 +274,8 @@ emit({
   baseBranch,
   summary: args.summary,
   closedAt,
+  tokensUsed,
+  tokensNote,
   actions,
   nextStepHint:
     '後續動作(由你決定,/spec:close 不會自動做):\n' +
