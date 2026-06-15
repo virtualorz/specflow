@@ -254,6 +254,30 @@ closed_at: 2026-06-04T18:42:11+08:00      # /spec:close 寫入
 
 所有 metadata 欄位都是 **best-effort**:取不到值(沒裝 git、不在 session 內、跨容器找不到 transcript 等)就靜默跳過,不會 halt slash command。specflow 本身不主動消費這些欄位,僅作為人類可讀的時間/作者/成本軌跡。
 
+## 視覺化:spectrun(選用延伸工具)
+
+如果想把 specflow 累積的 spec change 變成可讀的儀表板,可自架 [**spectrun**](https://hub.docker.com/r/virtualorz/spectrun) —— 從 GitHub 拉你 repo 內的 `specflow/` 目錄,呈現三種視圖:
+
+- **總覽** — 每個追蹤專案一張卡片(spec 總數、已完成、累計 token、跨度,加上 token 消耗縮圖)
+- **摘要** — 單一專案逐筆 change 的決策 / 任務 / 討論進度與三階段耗時
+- **時間軸** — 甘特圖呈現每筆 change 從 issued → closed 的跨度
+
+資料只留在你機器上(SQLite),不經過任何第三方。Docker 一行啟動:
+
+```bash
+docker run -d \
+  --name spectrun \
+  -p 5971:5971 \
+  -v spectrun-data:/data \
+  virtualorz/spectrun:latest
+```
+
+開啟 `http://localhost:5971` 完成設定(帳號密碼 + GitHub PAT),勾選要追蹤的 repo 即可。容器內建排程**每小時自動同步**,不需在主機另外設 cron。
+
+⚠️ 務必把 `/data` 掛成 volume 或主機目錄 —— 內含 Laravel `APP_KEY` 跟 SQLite 資料庫,APP_KEY 用來加密儲存 GitHub token,遺失就要重新輸入。
+
+詳細設定、PAT 權限、環境變數等見 [Docker Hub 頁面](https://hub.docker.com/r/virtualorz/spectrun)。
+
 ## 升級
 
 當 specflow 推出新版時,在已安裝的專案執行:
